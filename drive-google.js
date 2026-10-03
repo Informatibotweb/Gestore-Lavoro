@@ -4,9 +4,8 @@
 
    Come funziona:
    - OAuth 2.0 con Google Identity Services (login "Accedi con Google")
-   - Scope drive: accesso completo al Drive, per sfogliare le tue cartelle
-     (Mattia, Ahmed, Silvio, Nexiquar…) e caricarci dentro i file
-   - I file finiscono nella cartella che stai aprendo nel programma
+   - Scope drive.file: l'accesso riguarda SOLO i file creati da questa app
+   - I file finiscono nella cartella "Nexiquar" del Drive dell'utente
 
    ATTENZIONE: richiede un sito online (https) e un OAuth Client ID.
    Da file:// Google rifiuta il login (origine non autorizzata).
@@ -17,7 +16,7 @@ const GOOGLE_CLIENT_ID =
   "1067372020805-i47ki5du62c4eotbee6b00q493lnipjm.apps.googleusercontent.com";
 
 const GOOGLE_SCOPE =
-  "https://www.googleapis.com/auth/drive openid email";
+  "https://www.googleapis.com/auth/drive.file openid email";
 
 const GoogleDrive = {
   token: null,
@@ -168,19 +167,10 @@ const GoogleDrive = {
       if (ris.status === 401) throw Object.assign(new Error("token"), { scaduto: true });
       if (!ris.ok) {
         let msg = "Google Drive ha risposto " + ris.status;
-        let corpo = "";
         try {
           const j = await ris.json();
-          corpo = JSON.stringify(j);
           if (j.error && j.error.message) msg += " – " + j.error.message;
         } catch (e) {}
-        // permesso insufficiente (es. consenso vecchio): serve ricollegarsi
-        if (ris.status === 403 && /insufficient|scope/i.test(corpo)) {
-          this.disconnetti();
-          throw new Error(
-            "Serve autorizzazione per le cartelle: premi “Collega Google Drive” e consenti di nuovo l'accesso."
-          );
-        }
         throw new Error(msg);
       }
       return ris;
@@ -197,85 +187,64 @@ const GoogleDrive = {
     }
   },
 
-  /* ---------- contenuto di una cartella (null = radice del Drive) ---------- */
-  async contenuto(padreId) {
+  /* ---------- cartella "Nexiquar" dentro il Drive ---------- */
+  async cartellaNexiquar() {
+    if (this.cartella) return this.cartella;
     const q = encodeURIComponent(
-      (padreId ? "'" + padreId + "'" : "'root'") +
-        " in parents and trashed=false"
+      "mimeType='application/vnd.google-apps.folder' and name='Nexiquar' and trashed=false"
     );
     const ris = await this.chiedi(
-      "https://www.googleapis.com/drive/v3/files?q=" + q +
-        "&pageSize=500&fields=files(id,name,mimeType,size,createdTime,modifiedTime)"
+      "https://www.googleapis.com/drive/v3/files?q=" + q + "&fields=files(id,name)&spaces=drive"
     );
     const j = await ris.json();
-    return (j.files || []).map((f) => this.mappaVoce(f));
-  },
-
-  /* ---------- ricerca in tutto il Drive ---------- */
-  async cerca(testo) {
-    let voci = [];
-    let token = null;
-    for (let i = 0; i < 3; i++) {
-      const ris = await this.chiedi(
-        "https://www.googleapis.com/drive/v3/files?q=trashed%3Dfalse" +
-          "&pageSize=1000&fields=nextPageToken,files(id,name,mimeType,size,createdTime,modifiedTime)" +
-          (token ? "&pageToken=" + token : "")
-      );
-      const j = await ris.json();
-      voci = voci.concat(j.files || []);
-      token = j.nextPageToken;
-      if (!token) break;
+    if (j.files && j.files.length) {
+      this.cartella = j.files[0].id;
+      return this.cartella;
     }
-    const t = testo.toLowerCase();
-    return voci
-      .filter((f) => (f.name || "").toLowerCase().includes(t))
-      .map((f) => this.mappaVoce(f));
-  },
-
-  mappaVoce(f) {
-    return {
-      id: f.id,
-      origine: "google",
-      cartella: f.mimeType === "application/vnd.google-apps.folder",
-      nome: f.name,
-      tipo: f.mimeType || "application/octet-stream",
-      size: Number(f.size || 0),
-      data: f.modifiedTime || f.createdTime || new Date().toISOString(),
-    };
-  },
-
-  /* ---------- nuova cartella ---------- */
-  async creaCartella(nome, padreId) {
-    const meta = {
-      name: nome,
-      mimeType: "application/vnd.google-apps.folder",
-    };
-    if (padreId) meta.parents = [padreId];
-    const ris = await this.chiedi(
-      "https://www.googleapis.com/drive/v3/files?fields=id,name,createdTime",
+    const crea = await this.chiedi(
+      "https://www.googleapis.com/drive/v3/files?fields=id",
       {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(meta),
+        body: JSON.stringify({
+          name: "Nexiquar",
+          mimeType: "application/vnd.google-apps.folder",
+        }),
       }
     );
-    const c = await ris.json();
-    return this.mappaVoce({
-      id: c.id,
-      name: c.name || nome,
-      mimeType: "application/vnd.google-apps.folder",
-      createdTime: c.createdTime,
-    });
+    const c = await crea.json();
+    this.cartella = c.id;
+    return c.id;
   },
 
   /* ---------- operazioni ---------- */
-  async salva(file, padreId) {
+  async elenco() {
+    const cartella = await this.cartellaNexiquar();
+    const q = encodeURIComponent("'" + cartella + "' in parents and trashed=false");
+    const ris = await this.chiedi(
+      "https://www.googleapis.com/drive/v3/files?q=" + q +
+        "&pageSize=300&fields=files(id,name,mimeType,size,createdTime,modifiedTime)"
+    );
+    const j = await ris.json();
+    return (j.files || []).map((f) => ({
+      id: f.id,
+      origine: "google",
+      nome: f.name,
+      tipo: f.mimeType || "application/octet-stream",
+      size: Number(f.size || 0),
+      data: f.createdTime || f.modifiedTime || new Date().toISOString(),
+    }));
+  },
+
+  async salva(file) {
+    const cartella = await this.cartellaNexiquar();
     const fd = new FormData();
-    const meta = { name: file.name };
-    if (padreId) meta.parents = [padreId]; // senza parents finisce nella radice
     fd.append(
       "metadata",
-      new Blob([JSON.stringify(meta)], { type: "application/json" })
+      new Blob(
+        [JSON.stringify({ name: file.name, parents: [cartella] })],
+        { type: "application/json" }
+      )
     );
     fd.append("file", file);
     const ris = await this.chiedi(
@@ -314,6 +283,63 @@ const GoogleDrive = {
       URL.revokeObjectURL(u);
       this.cacheUrl.delete(rec.id);
     }
+  },
+
+  /* ---------- file di testo chat (gruppo / privati) ---------- */
+  async trovaFilePerNome(nomeFile) {
+    const cartella = await this.cartellaNexiquar();
+    const q = encodeURIComponent(
+      "name='" + nomeFile + "' and '" + cartella + "' in parents and trashed=false"
+    );
+    const ris = await this.chiedi(
+      "https://www.googleapis.com/drive/v3/files?q=" + q +
+        "&fields=files(id,name,modifiedTime)&spaces=drive"
+    );
+    const j = await ris.json();
+    return (j.files && j.files[0]) || null;
+  },
+
+  async leggiTesto(nomeFile) {
+    const f = await this.trovaFilePerNome(nomeFile);
+    if (!f) return "";
+    const ris = await this.chiedi(
+      "https://www.googleapis.com/drive/v3/files/" + f.id + "?alt=media"
+    );
+    return await ris.text();
+  },
+
+  async scriviTesto(nomeFile, contenuto) {
+    const esistente = await this.trovaFilePerNome(nomeFile);
+    const blob = new Blob([contenuto], { type: "text/plain;charset=utf-8" });
+    if (esistente) {
+      const fd = new FormData();
+      fd.append(
+        "metadata",
+        new Blob([JSON.stringify({ name: nomeFile })], { type: "application/json" })
+      );
+      fd.append("file", blob);
+      const ris = await this.chiedi(
+        "https://www.googleapis.com/upload/drive/v3/files/" + esistente.id +
+          "?uploadType=multipart&fields=id,name,modifiedTime",
+        { method: "PATCH", body: fd }
+      );
+      return await ris.json();
+    }
+    const cartella = await this.cartellaNexiquar();
+    const fd = new FormData();
+    fd.append(
+      "metadata",
+      new Blob(
+        [JSON.stringify({ name: nomeFile, parents: [cartella] })],
+        { type: "application/json" }
+      )
+    );
+    fd.append("file", blob);
+    const ris = await this.chiedi(
+      "https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id,name,modifiedTime",
+      { method: "POST", body: fd }
+    );
+    return await ris.json();
   },
 };
 
