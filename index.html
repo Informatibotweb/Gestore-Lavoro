@@ -1,0 +1,437 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#0b1020">
+  <title>Nexiquar – Accesso</title>
+  <link rel="icon" href="https://nexiquar.netlify.app/logo.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css?v=4">
+</head>
+<body>
+
+  <!-- ============ SFONDO "WALLPAPER" ============ -->
+  <div class="sfondo" aria-hidden="true">
+    <span class="blob blob-1"></span>
+    <span class="blob blob-2"></span>
+    <span class="blob blob-3"></span>
+    <span class="blob blob-4"></span>
+    <span class="blob blob-5"></span>
+    <div class="striscia"></div>
+    <div class="grana"></div>
+    <div class="vignetta"></div>
+  </div>
+  <div class="scuritore" aria-hidden="true"></div>
+
+  <!-- ============================================================
+       SCHERMATA DI ACCESSO (stile lock screen macOS)
+       ============================================================ -->
+  <section id="schermata-accesso" class="schermata attiva">
+    <div class="schermo-accesso">
+
+      <header class="accesso-testa">
+        <img src="https://nexiquar.netlify.app/logo.png" alt="" class="logo-piccolo">
+        <span>Nexiquar</span>
+      </header>
+
+      <div class="colonna-accesso">
+
+        <!-- Passo 1: scelta account -->
+        <div id="step-accounts">
+          <p class="titolo-scelta">Scegli un account</p>
+          <div id="lista-account" class="lista-account"></div>
+        </div>
+
+        <!-- Passo 2: password -->
+        <div id="step-password" class="nascosto">
+          <div class="avatar-grande" id="avatar-login">N</div>
+          <div class="nome-scelto" id="nome-scelto"></div>
+
+          <form id="form-accesso" novalidate>
+            <div class="campo-password-lock">
+              <input type="password" id="password" placeholder="Password"
+                     autocomplete="current-password" aria-label="Password">
+              <button type="submit" class="btn-freccia" aria-label="Accedi">
+                <svg viewBox="0 0 24 24"><path d="M5 12h13M13 6l6 6-6 6" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg>
+              </button>
+            </div>
+            <p id="messaggio-errore" class="errore nascosto" role="alert"></p>
+            <button type="button" id="btn-indietro" class="link-indietro">Tutti gli account</button>
+          </form>
+        </div>
+
+      </div>
+
+      <footer class="accesso-piede">
+        <span class="stato-sistema" id="orologio-accesso">—</span>
+      </footer>
+
+    </div>
+  </section>
+
+  <!-- ============================================================
+       AREA INTERNI (desktop)
+       ============================================================ -->
+  <section id="schermata-interni" class="schermata">
+
+    <!-- menu bar macOS -->
+    <header class="menu-bar">
+      <div class="sx">
+        <img src="https://nexiquar.netlify.app/logo.png" alt="" class="logo-menu">
+        <strong class="app-menu" id="app-menu-nome">Nexiquar</strong>
+      </div>
+      <div class="dx">
+        <span class="badge-ruolo" id="ruolo-utente">Utente</span>
+        <button id="btn-esci" class="btn-esci">
+          <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M10 4H6a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h4M15 8l4 4-4 4M19 12H9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+          Esci
+        </button>
+        <span class="icona-sistema" title="Wi‑Fi">
+          <svg viewBox="0 0 24 24"><path d="M12 19.5 8.6 15.8a5 5 0 0 1 6.8 0L12 19.5Zm-6-6.4-1.8-1.9a11 11 0 0 1 15.6 0l-1.8 1.9a8.4 8.4 0 0 0-12 0Z"/></svg>
+        </span>
+        <span class="icona-sistema" title="Batteria">
+          <svg viewBox="0 0 24 24"><rect x="2" y="8" width="17" height="9" rx="3" fill="none" stroke="currentColor" stroke-width="1.6"/><rect x="4" y="10" width="12" height="5" rx="1.6"/><path d="M21 11.5v2" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </span>
+        <span class="orologio" id="orologio">--:--</span>
+      </div>
+    </header>
+
+    <main class="desktop">
+
+      <!-- ---------- SCRIVANIA / DASHBOARD ---------- -->
+      <div class="scrivania" id="scrivania">
+        <section class="hero">
+          <div class="avatar" id="avatar">N</div>
+          <div>
+            <h2 id="titolo-benvenuto">Bentornato 👋</h2>
+            <p id="sottotitolo-benvenuto">Sei connesso all'area di lavoro Nexiquar.</p>
+          </div>
+        </section>
+
+        <div class="griglia">
+          <article class="pannello" data-apri="calendario">
+            <div class="icona-pannello indaco">
+              <svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="3" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M3 10h18M8 3v4M16 3v4" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+            </div>
+            <h3>Calendario</h3>
+            <p id="data-oggi">—</p>
+          </article>
+
+          <article class="pannello" data-apri="file">
+            <div class="icona-pannello ciano">
+              <svg viewBox="0 0 24 24"><path d="M3 7a2 2 0 0 1 2-2h4l2 2.5h8a2 2 0 0 1 2 2V17a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V7Z" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linejoin="round"/></svg>
+            </div>
+            <h3>File</h3>
+            <p id="pannello-file-conta">Nessun file salvato.</p>
+          </article>
+
+          <article class="pannello" data-apri="impostazioni">
+            <div class="icona-pannello viola">
+              <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="3.2" fill="none" stroke="currentColor" stroke-width="1.9"/><path d="M12 3.5v2.2M12 18.3v2.2M20.5 12h-2.2M5.7 12H3.5M18 6l-1.6 1.6M7.6 16.4 6 18M18 18l-1.6-1.6M7.6 7.6 6 6" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+            </div>
+            <h3>Impostazioni</h3>
+            <p>Sistema, aspetto, rete e account.</p>
+          </article>
+        </div>
+      </div>
+
+      <!-- ---------- FINESTRA: IMPOSTAZIONI ---------- -->
+      <div class="finestra-app nascosto" id="app-impostazioni" data-nome="Impostazioni" data-icona="⚙️">
+        <div class="barra-finestra">
+          <div class="semafori">
+            <button class="luce rosso" data-azione="chiudi" aria-label="Chiudi"></button>
+            <button class="luce giallo" data-azione="riduci" aria-label="Riduci a icona"></button>
+            <button class="luce verde" data-azione="ingrandisci" aria-label="Ingrandisci"></button>
+          </div>
+          <span class="titolo-finestra">Impostazioni</span>
+          <span class="spazio-destra"></span>
+        </div>
+
+        <div class="app-corpo">
+          <!-- laterale -->
+          <nav class="laterale">
+            <div class="profilo-laterale">
+              <div class="avatar-mini" id="avatar-mini">N</div>
+              <div class="profilo-testo">
+                <strong id="nome-laterale">—</strong>
+                <span id="ruolo-laterale">—</span>
+              </div>
+              <button class="uscita-laterale" id="btn-esci-laterale" title="Esci dall'account">⏻</button>
+            </div>
+
+            <button class="voce attiva" data-sezione="aspetto"><span class="tasto-ico rosa">🎨</span>Aspetto</button>
+            <button class="voce" data-sezione="schermo"><span class="tasto-ico blu">🖥️</span>Schermo</button>
+            <button class="voce" data-sezione="suono"><span class="tasto-ico rossa">🔊</span>Suono</button>
+            <button class="voce" data-sezione="notifiche"><span class="tasto-ico rosse">🔔</span>Notifiche</button>
+            <button class="voce" data-sezione="wifi"><span class="tasto-ico azzurra">📡</span>Wi‑Fi</button>
+            <button class="voce" data-sezione="bluetooth"><span class="tasto-ico blu">🔵</span>Bluetooth</button>
+            <button class="voce" data-sezione="sicurezza"><span class="tasto-ico grigia">🔒</span>Sicurezza</button>
+            <button class="voce" data-sezione="account"><span class="tasto-ico viola">👤</span>Account</button>
+          </nav>
+
+          <!-- contenuto a schede -->
+          <div class="contenuto-app" id="contenuto-impostazioni">
+
+            <!-- ASPETTO -->
+            <section class="scheda-sett attiva" data-scheda="aspetto">
+              <h3>Aspetto</h3>
+              <div class="scheda">
+                <h4>Colore d'accento</h4>
+                <div class="colori">
+                  <button class="colore attivo" data-accento="#0a84ff" style="--c:#0a84ff" aria-label="Blu"></button>
+                  <button class="colore" data-accento="#5e5ce6" style="--c:#5e5ce6" aria-label="Indaco"></button>
+                  <button class="colore" data-accento="#bf5af2" style="--c:#bf5af2" aria-label="Viola"></button>
+                  <button class="colore" data-accento="#ff375f" style="--c:#ff375f" aria-label="Rosso"></button>
+                  <button class="colore" data-accento="#ff9f0a" style="--c:#ff9f0a" aria-label="Arancio"></button>
+                  <button class="colore" data-accento="#30d158" style="--c:#30d158" aria-label="Verde"></button>
+                </div>
+              </div>
+
+              <div class="scheda">
+                <h4>Interfaccia</h4>
+                <div class="riga">
+                  <span>Riduci la trasparenza</span>
+                  <button class="interruttore" role="switch" aria-checked="false" data-effetto="trasparenza"></button>
+                </div>
+                <div class="riga">
+                  <span>Riduci il movimento</span>
+                  <button class="interruttore" role="switch" aria-checked="false" data-effetto="movimento"></button>
+                </div>
+                <div class="riga">
+                  <span>Dimensione del dock</span>
+                  <div class="riga-slider">
+                    <input type="range" min="70" max="130" value="100" data-scala="dock">
+                    <span class="valore" id="val-dock">100%</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <!-- SCHERMO -->
+            <section class="scheda-sett" data-scheda="schermo">
+              <h3>Schermo</h3>
+              <div class="scheda">
+                <div class="riga">
+                  <span>Luminosità</span>
+                  <div class="riga-slider">
+                    <input type="range" min="35" max="100" value="100" data-scala="luminosita">
+                    <span class="valore" id="val-luminosita">100%</span>
+                  </div>
+                </div>
+                <div class="riga">
+                  <span>True Tone</span>
+                  <button class="interruttore attivo" role="switch" aria-checked="true"></button>
+                </div>
+                <div class="riga">
+                  <span>Notte</span>
+                  <button class="interruttore" role="switch" aria-checked="false"></button>
+                </div>
+              </div>
+            </section>
+
+            <!-- SUONO -->
+            <section class="scheda-sett" data-scheda="suono">
+              <h3>Suono</h3>
+              <div class="scheda">
+                <div class="riga">
+                  <span>Volume di uscita</span>
+                  <div class="riga-slider">
+                    <input type="range" min="0" max="100" value="65" data-scala="volume">
+                    <span class="valore" id="val-volume">65%</span>
+                  </div>
+                </div>
+                <div class="riga">
+                  <span>Suono all'avvio</span>
+                  <button class="interruttore attivo" role="switch" aria-checked="true"></button>
+                </div>
+                <div class="riga">
+                  <span>Avviso per gli alert</span>
+                  <select class="selettore">
+                    <option>Predefinito</option><option>Silenzioso</option><option>Nessuno</option>
+                  </select>
+                </div>
+              </div>
+            </section>
+
+            <!-- NOTIFICHE -->
+            <section class="scheda-sett" data-scheda="notifiche">
+              <h3>Notifiche</h3>
+              <div class="scheda">
+                <div class="riga"><span>📅 Calendario</span><button class="interruttore attivo" role="switch" aria-checked="true"></button></div>
+                <div class="riga"><span>⚙️ Impostazioni</span><button class="interruttore attivo" role="switch" aria-checked="true"></button></div>
+              </div>
+              <div class="scheda">
+                <div class="riga"><span>Mostra anteprime</span><button class="interruttore attivo" role="switch" aria-checked="true"></button></div>
+              </div>
+            </section>
+
+            <!-- WI-FI -->
+            <section class="scheda-sett" data-scheda="wifi">
+              <h3>Wi‑Fi</h3>
+              <div class="scheda">
+                <div class="riga"><span>Wi‑Fi</span><button class="interruttore attivo" role="switch" aria-checked="true" data-effetto="wifi"></button></div>
+              </div>
+            </section>
+
+            <!-- BLUETOOTH -->
+            <section class="scheda-sett" data-scheda="bluetooth">
+              <h3>Bluetooth</h3>
+              <div class="scheda">
+                <div class="riga"><span>Bluetooth</span><button class="interruttore attivo" role="switch" aria-checked="true"></button></div>
+              </div>
+            </section>
+
+            <!-- SICUREZZA -->
+            <section class="scheda-sett" data-scheda="sicurezza">
+              <h3>Sicurezza</h3>
+              <div class="scheda">
+                <div class="riga"><span>Firewall</span><button class="interruttore attivo" role="switch" aria-checked="true"></button></div>
+                <div class="riga"><span>Blocco automatico</span>
+                  <select class="selettore"><option>Dopo 5 minuti</option><option>Subito</option><option>Mai</option></select>
+                </div>
+                <div class="riga"><span>Modalità ospite</span><button class="interruttore" role="switch" aria-checked="false"></button></div>
+              </div>
+            </section>
+
+            <!-- ACCOUNT -->
+            <section class="scheda-sett" data-scheda="account">
+              <h3>Account</h3>
+              <div class="scheda scheda-account">
+                <div class="avatar" id="avatar-account">N</div>
+                <div>
+                  <strong id="nome-account">—</strong>
+                  <span class="valore" id="ruolo-account">—</span>
+                </div>
+              </div>
+              <div class="scheda">
+                <div class="riga"><span>Nome account</span><span class="valore" id="account-nome">—</span></div>
+                <div class="riga"><span>Ruolo</span><span class="valore" id="account-ruolo">—</span></div>
+                <div class="riga"><span>Ultimo accesso</span><span class="valore" id="account-accesso">—</span></div>
+                <div class="riga"><span>Password</span><span class="valore">Impostata ✓</span></div>
+              </div>
+              <button class="pulsante rosso" id="btn-esci-account">Esci dall'account</button>
+            </section>
+
+          </div>
+        </div>
+      </div>
+
+      <!-- ---------- FINESTRA: CALENDARIO ---------- -->
+      <div class="finestra-app nascosto" id="app-calendario" data-nome="Calendario" data-icona="📅">
+        <div class="barra-finestra">
+          <div class="semafori">
+            <button class="luce rosso" data-azione="chiudi" aria-label="Chiudi"></button>
+            <button class="luce giallo" data-azione="riduci" aria-label="Riduci a icona"></button>
+            <button class="luce verde" data-azione="ingrandisci" aria-label="Ingrandisci"></button>
+          </div>
+          <span class="titolo-finestra">Calendario</span>
+          <span class="spazio-destra"></span>
+        </div>
+
+        <div class="barra-calendario">
+          <button class="btn-oggi" id="btn-oggi">Oggi</button>
+          <div class="navigazione">
+            <button class="freccia-nav" id="mese-prec" aria-label="Mese precedente">‹</button>
+            <button class="freccia-nav" id="mese-succ" aria-label="Mese successivo">›</button>
+          </div>
+          <h3 id="titolo-mese">—</h3>
+          <span class="spazio-destra"></span>
+        </div>
+
+        <div class="calendario-corpo">
+          <div class="griglia-calendario">
+            <div class="intest-settimana">
+              <span>Lun</span><span>Mar</span><span>Mer</span><span>Gio</span>
+              <span>Ven</span><span>Sab</span><span>Dom</span>
+            </div>
+            <div id="griglia-giorni" class="griglia-giorni"></div>
+          </div>
+
+          <aside class="pannello-giorno">
+            <h4 id="titolo-giorno">Seleziona un giorno</h4>
+            <ul id="elenco-eventi" class="elenco-eventi"></ul>
+            <form id="form-evento" class="form-evento">
+              <input type="text" id="testo-evento" placeholder="Nuovo impegno…" maxlength="46">
+              <div class="riga-form">
+                <input type="time" id="ora-evento" value="09:00">
+                <button type="submit" class="pulsante-piccolo pieno">Aggiungi</button>
+              </div>
+            </form>
+          </aside>
+        </div>
+      </div>
+
+      <!-- ---------- FINESTRA: FILE (drive Nexiquar) ---------- -->
+      <div class="finestra-app nascosto" id="app-file" data-nome="File" data-icona="📁">
+        <div class="barra-finestra">
+          <div class="semafori">
+            <button class="luce rosso" data-azione="chiudi" aria-label="Chiudi"></button>
+            <button class="luce giallo" data-azione="riduci" aria-label="Riduci a icona"></button>
+            <button class="luce verde" data-azione="ingrandisci" aria-label="Ingrandisci"></button>
+          </div>
+          <span class="titolo-finestra">File · Drive Nexiquar</span>
+          <span class="spazio-destra"></span>
+        </div>
+
+        <div class="barra-file">
+          <label class="pulsante pieno-carica" for="input-file">⬆ Carica file</label>
+          <input type="file" id="input-file" multiple hidden>
+          <button type="button" class="pulsante-cloud" id="pulsante-cloud">☁ Collega Google Drive</button>
+          <span class="stato-cloud nascosto" id="stato-cloud" role="button" tabindex="0" title="Premi per scollegare Google Drive"></span>
+          <input type="search" id="cerca-file" class="cerca-file" placeholder="Cerca file…">
+          <span class="contatore-file" id="contatore-file">0 file</span>
+        </div>
+
+        <div class="corpo-file" id="zona-file">
+          <div id="elenco-file" class="elenco-file"></div>
+          <div id="drive-vuoto" class="drive-vuoto">
+            <span class="icona-vuota">📁</span>
+            <p>Il tuo drive è vuoto</p>
+            <span>Trascina qui i file oppure premi “Carica file”.</span>
+          </div>
+          <div id="sottomesso" class="sottomesso nascosto">Rilascia i file per caricarli</div>
+        </div>
+      </div>
+
+      <!-- ---------- MODAL ANTEPRIMA FILE ---------- -->
+      <div class="finestra-modal nascosto" id="modal-file" role="dialog" aria-modal="true">
+        <div class="vetro-modal">
+          <div class="barra-finestra">
+            <div class="semafori">
+              <button class="luce rosso" id="chiudi-modal" aria-label="Chiudi"></button>
+              <button class="luce giallo" aria-hidden="true" tabindex="-1"></button>
+              <button class="luce verde" aria-hidden="true" tabindex="-1"></button>
+            </div>
+            <span class="titolo-finestra" id="titolo-modal">File</span>
+            <span class="spazio-destra"></span>
+          </div>
+          <div class="corpo-modal" id="corpo-modal"></div>
+          <div class="azioni-modal">
+            <button class="pulsante-piccolo pieno" id="scarica-modal">⬇ Scarica</button>
+            <button class="pulsante-piccolo" id="chiudi-modal-2">Chiudi</button>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- dock -->
+    <nav class="dock" aria-label="Dock">
+      <button class="dock-item" data-azione-home title="Scrivania"><img src="https://nexiquar.netlify.app/logo.png" alt="Scrivania"></button>
+      <button class="dock-item" data-app="calendario" title="Calendario">📅</button>
+      <button class="dock-item" data-app="file" title="File">📁</button>
+      <button class="dock-item" data-app="impostazioni" title="Impostazioni">⚙️</button>
+    </nav>
+
+    <div id="contenitore-toast"></div>
+  </section>
+
+  <!-- File con le credenziali, tenuto separato dal resto -->
+  <script src="credenziali.js?v=4"></script>
+  <script src="drive-google.js?v=4"></script>
+  <script src="app.js?v=4"></script>
+</body>
+</html>
