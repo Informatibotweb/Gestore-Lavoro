@@ -999,15 +999,18 @@ function aggiornaStatoCloud() {
     stato.textContent = "☁ " + (GoogleDrive.email || "Google Drive collegato");
     stato.title = "Premi per scollegare Google Drive";
   } else if (!GoogleDrive.configurato) {
-    pulsante.disabled = true;
+    pulsante.classList.add("off");
+    pulsante.setAttribute("aria-disabled", "true");
     pulsante.textContent = "☁ Google Drive non configurato";
-    pulsante.title = "Manca l'OAuth Client ID di Google";
+    pulsante.title = "Manca l'OAuth Client ID: leggi README-drive-google.txt";
   } else if (!disponibile) {
-    pulsante.disabled = true;
+    pulsante.classList.add("off");
+    pulsante.setAttribute("aria-disabled", "true");
     pulsante.textContent = "☁ Google Drive online";
-    pulsante.title = "Per collegare Google Drive apri il sito online (Netlify)";
+    pulsante.title = "Google funziona solo con il sito pubblicato: premi per sapere come fare";
   } else {
-    pulsante.disabled = false;
+    pulsante.classList.remove("off");
+    pulsante.removeAttribute("aria-disabled");
     pulsante.textContent = "☁ Collega Google Drive";
     pulsante.title = "I file caricati finiranno sul tuo Google Drive";
   }
@@ -1015,15 +1018,21 @@ function aggiornaStatoCloud() {
 
 elemento("pulsante-cloud").addEventListener("click", async () => {
   const pulsante = elemento("pulsante-cloud");
-  if (pulsante.disabled) {    if (typeof GoogleDrive !== "undefined" && !GoogleDrive.configurato)
+
+  // non collegabile qui → spieghiamo cosa fare invece di ignorare il click
+  if (typeof GoogleDrive !== "undefined" && !GoogleDrive.disponibile) {
+    if (!GoogleDrive.configurato)
       toast("Google Drive",
-        "Manca il Client ID: segui la guida in README-drive-google.txt", "ℹ️");
+        "Manca il Client ID: leggi README-drive-google.txt", "ℹ️");
     else
       toast("Google Drive",
-        "Apri il programma online (Netlify): da file Google non concede l'accesso", "ℹ️");
+        "Funziona solo con il sito pubblicato: trascina la cartella su " +
+        "app.netlify.com, apri l'URL che ti dà e premi qui di nuovo.", "☁️");
     return;
   }
-  pulsante.disabled = true;
+
+  pulsante.classList.add("off");
+  pulsante.setAttribute("aria-disabled", "true");
   pulsante.textContent = "Accesso in corso…";
   try {
     await GoogleDrive.apri();
