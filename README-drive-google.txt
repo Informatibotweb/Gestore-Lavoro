@@ -5,7 +5,17 @@ STATO ATTUALE: ✅ Sito online su https://lavoronx.netlify.app
                ✅ Client ID inserito e origin autorizzato
                ✅ Login Google riuscito (consenso dato)
                ✅ Mail account salvata (Impostazioni → Account → Google Drive)
-Resta da fare: caricare un file e verificarlo nella cartella "Nexiquar" del Drive.
+               ✅ Cartelle sfogliabili: Il mio Drive › Mattia / Ahmed /
+                  Silvio / Nexiquar… (upload nella cartella aperta,
+                  ricerca in tutto il Drive, nuova cartella, elimina)
+Resta da fare: ripubblicare su Netlify dopo le modifiche e ricollegarsi.
+
+IMPORTANTE – PERMESSO AMPIATO
+Lo scope è ora "drive" completo (serve per vedere le cartelle che hai già
+creato/rinominato tu nel Drive). Se in precedenza avevi già collegato,
+premi di nuovo "Collega Google Drive" e consenti: Google chiede di
+riconfermare l'accesso (altrimenti il programma mostra un avviso e il
+pulsante "Collega" ricompare da solo).
 
 Cosa fa: il pulsante "Collega Google Drive" della finestra File collega il
 programma al TUO Google Drive. I file caricati finiscono nella cartella
@@ -41,15 +51,19 @@ GOOGLE_CLIENT_ID e aggiorna drive-google.js?v=N in index.html.
    i file sono tutti lì.
 
 NOTE
- - Scope usato: drive.file = l'app vede e modifica SOLO i file che ha creato
-   lei, mai i tuoi altri documenti.
- - Se l'applicazione è in "Testing" su Google Cloud, i token durano 7 giorni:
-   dopo basta ricollegarsi (o premi "Pubblica app" nella schermata di consenso).
+ - Scope usato: drive = il programma vede e usa tutto il tuo Drive (serve per
+   le tue cartelle già create). In Google Cloud l'app deve restare in
+   "Testing" con il tuo account tra gli "utenti di prova".
+ - Nella finestra File: un clic su una cartella la apre; il breadcrumb
+   "☁ Il mio Drive › Mattia" torna indietro; "＋ Nuova cartella" crea una
+   cartella dove ti trovi; "Elimina" la manda nel cestino di Google Drive.
+ - La ricerca vale su TUTTO il Drive (non solo la cartella aperta).
+ - I file Google nativi (Docs, Fogli, Presentazioni) non si scaricano:
+   si aprono online con "Apri su Google".
  - I file già presenti in locale restano visibili con l'etichetta
-   "💾 Questo computer"; quelli nuovi vanno su Google Drive.
+   "💾 Questo computer" quando sei in radice; quelli nuovi vanno sul Drive.
  - ATTENZIONE all'archivio locale: quello creato aprendo index.html sul
    computer (file://) è SEPARATO da quello del sito online. I file caricati
-   prima della pubblicazione non compaiono su Netlify: vanno ricaricati lì
-   (poi finiscono su Google Drive e sono ovunque).
+   prima della pubblicazione non compaiono su Netlify: vanno ricaricati lì.
  - La mail dell'account Google collegato resta salvata nel browser
    (Impostazioni → Account → Google Drive) finché non premi "scollega".
