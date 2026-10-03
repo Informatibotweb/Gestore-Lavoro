@@ -49,16 +49,48 @@ function applicaColori(el, nome) {
    ============================================================ */
 let accountScelto = null;
 
+/* ---- crittografia (SHA-256 + HMAC) ---- */
+const CHIAVE_FIRMA_CHAT = "Nexiquar·Chat·v1·2026·sig"; // legata agli hash password
+
+async function sha256Hex(testo) {
+  const buf = await crypto.subtle.digest(
+    "SHA-256",
+    new TextEncoder().encode(String(testo))
+  );
+  return [...new Uint8Array(buf)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
+async function hmacHex(chiave, dati) {
+  const key = await crypto.subtle.importKey(
+    "raw",
+    new TextEncoder().encode(String(chiave)),
+    { name: "HMAC", hash: "SHA-256" },
+    false,
+    ["sign"]
+  );
+  const sig = await crypto.subtle.sign(
+    "HMAC",
+    key,
+    new TextEncoder().encode(String(dati))
+  );
+  return [...new Uint8Array(sig)]
+    .map((b) => b.toString(16).padStart(2, "0"))
+    .join("");
+}
+
 function passwordOverrides() {
+  // mappa nome → passwordHash (SHA-256 hex)
   try {
-    return JSON.parse(localStorage.getItem("nexiquar_pwd_v1") || "{}");
+    return JSON.parse(localStorage.getItem("nexiquar_pwd_v2") || "{}");
   } catch (e) { return {}; }
 }
 
-function salvaPasswordOverride(nome, nuova) {
+function salvaPasswordOverride(nome, hashHex) {
   const o = passwordOverrides();
-  o[nome] = nuova;
-  try { localStorage.setItem("nexiquar_pwd_v1", JSON.stringify(o)); } catch (e) {}
+  o[nome] = hashHex;
+  try { localStorage.setItem("nexiquar_pwd_v2", JSON.stringify(o)); } catch (e) {}
 }
 
 function credenziali() {
@@ -66,9 +98,23 @@ function credenziali() {
   const ov = passwordOverrides();
   return CREDENZIALI.map((acc) => {
     const copia = Object.assign({}, acc);
-    if (ov[acc.nome]) copia.password = ov[acc.nome];
+    // passwordHash è l'unico campo segreto; override da localStorage se presente
+    if (ov[acc.nome]) copia.passwordHash = ov[acc.nome];
     return copia;
   });
+}
+
+function hashDi(nomeUtente) {
+  const lista = credenziali() || [];
+  const acc = lista.find((a) => a.nome === nomeUtente);
+  return acc ? acc.passwordHash : null;
+}
+
+async function chiaveFirmaPer(nomeUtente) {
+  const h = hashDi(nomeUtente);
+  if (!h) return null;
+  // chiave derivata: non è la password in chiaro, né solo l'hash grezzo
+  return sha256Hex(CHIAVE_FIRMA_CHAT + "|" + h);
 }
 
 let utenteCorrente = null;
@@ -139,7 +185,7 @@ function pulisciErrore() {
 
 elemento("btn-indietro")?.addEventListener("click", tornaAllaLista);
 
-elemento("form-accesso").addEventListener("submit", (e) => {
+elemento("form-accesso").addEventListener("submit", async (e) => {
   e.preventDefault();
   pulisciErrore();
 
@@ -153,7 +199,10 @@ elemento("form-accesso").addEventListener("submit", (e) => {
     mostraErrore("Inserisci la password per continuare.");
     return;
   }
-  if (accountScelto.password !== password) {
+  // confronto solo sugli hash SHA-256 (mai password in chiaro)
+  const hashInserito = await sha256Hex(password);
+  const hashAtteso = accountScelto.passwordHash || "";
+  if (!hashAtteso || hashInserito !== hashAtteso) {
     mostraErrore("Password errata. Riprova.");
     elemento("password").value = "";
     elemento("password").focus();
@@ -1194,7 +1243,7 @@ async function avviaAccessoGoogleObbligatorio(account) {
 /* ============================================================
    CAMBIA PASSWORD (Impostazioni → Account)
    ============================================================ */
-elemento("form-cambia-password")?.addEventListener("submit", (e) => {
+elemento("form-cambia-password")?.addEventListener("submit", async (e) => {
   e.preventDefault();
   const msg = elemento("msg-pwd");
   const mostra = (testo, ok) => {
@@ -1212,7 +1261,8 @@ elemento("form-cambia-password")?.addEventListener("submit", (e) => {
 
   const lista = credenziali();
   const acc = lista.find((a) => a.nome === utenteCorrente.nome);
-  if (!acc || acc.password !== attuale) {
+  const hashAttuale = await sha256Hex(attuale);
+  if (!acc || !acc.passwordHash || acc.passwordHash !== hashAttuale) {
     mostra("Password attuale non corretta.", false);
     return;
   }
@@ -1228,8 +1278,9 @@ elemento("form-cambia-password")?.addEventListener("submit", (e) => {
     mostra("La nuova password è uguale a quella attuale.", false);
     return;
   }
-  salvaPasswordOverride(utenteCorrente.nome, nuova);
-  utenteCorrente.password = nuova;
+  const nuovoHash = await sha256Hex(nuova);
+  salvaPasswordOverride(utenteCorrente.nome, nuovoHash);
+  utenteCorrente.passwordHash = nuovoHash;
   elemento("pwd-attuale").value = "";
   elemento("pwd-nuova").value = "";
   elemento("pwd-conferma").value = "";
@@ -1301,8 +1352,28 @@ function selezionaChat(id) {
   caricaMessaggiChat(true);
 }
 
-function parseMessaggi(testo) {
-  // Formato: [YYYY-MM-DD HH:MM] Nome: testo |§|seen:Nome1;Nome2
+async function firmaMessaggio(ora, nome, testo) {
+  const chiave = await chiaveFirmaPer(nome);
+  if (!chiave) return null;
+  // payload immutabile: se qualcuno cambia testo/ora/nome la firma non torna
+  return hmacHex(chiave, ora + "|" + nome + "|" + testo);
+}
+
+async function verificaFirma(msg) {
+  if (!msg.sig || !msg.nome) return false;
+  const attesa = await firmaMessaggio(msg.ora, msg.nome, msg.testo);
+  if (!attesa) return false;
+  // confronto a tempo costante-ish
+  if (attesa.length !== msg.sig.length) return false;
+  let diff = 0;
+  for (let i = 0; i < attesa.length; i++) {
+    diff |= attesa.charCodeAt(i) ^ msg.sig.charCodeAt(i);
+  }
+  return diff === 0;
+}
+
+async function parseMessaggi(testo) {
+  // Formato: [YYYY-MM-DD HH:MM] Nome: testo |§|seen:... |§|sig:hex
   const righe = (testo || "").split(/\r?\n/);
   const out = [];
   const re = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s+(.+?):\s*(.*)$/;
@@ -1312,31 +1383,53 @@ function parseMessaggi(testo) {
     if (!m) continue;
     let corpo = m[3];
     let visti = [];
-    const sep = corpo.lastIndexOf(" |§|seen:");
-    if (sep >= 0) {
-      const parteSeen = corpo.slice(sep + " |§|seen:".length);
-      corpo = corpo.slice(0, sep);
-      visti = parteSeen.split(";").map((s) => s.trim()).filter(Boolean);
+    let sig = "";
+    // estrai sig e seen (ordine indipendente)
+    const parti = corpo.split(" |§|");
+    corpo = parti[0];
+    for (let i = 1; i < parti.length; i++) {
+      const p = parti[i];
+      if (p.startsWith("seen:")) {
+        visti = p.slice(5).split(";").map((s) => s.trim()).filter(Boolean);
+      } else if (p.startsWith("sig:")) {
+        sig = p.slice(4).trim();
+      }
     }
-    out.push({ ora: m[1], nome: m[2], testo: corpo, visti, raw: r });
+    const msg = { ora: m[1], nome: m[2], testo: corpo, visti, sig };
+    // rifiuta messaggi senza firma valida (modifiche manuali al .txt)
+    if (!(await verificaFirma(msg))) continue;
+    out.push(msg);
   }
   return out;
 }
 
-function formattaRiga(nome, testo, visti) {
+async function formattaRiga(nome, testo, visti) {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const stamp =
     d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
     " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
-  let riga = "[" + stamp + "] " + nome + ": " + testo.replace(/\r?\n/g, " ");
+  const corpo = testo.replace(/\r?\n/g, " ");
+  let riga = "[" + stamp + "] " + nome + ": " + corpo;
   const lista = (visti || []).filter(Boolean);
   if (lista.length) riga += " |§|seen:" + lista.join(";");
+  const sig = await firmaMessaggio(stamp, nome, corpo);
+  if (sig) riga += " |§|sig:" + sig;
   return riga;
 }
 
-function serializzaMessaggi(lista) {
-  return lista.map((m) => formattaRiga(m.nome, m.testo, m.visti)).join("\n") + (lista.length ? "\n" : "");
+async function serializzaMessaggi(lista) {
+  const righe = [];
+  for (const m of lista) {
+    // ricalcola sempre la firma sul contenuto attuale (dopo update seen)
+    let riga = "[" + m.ora + "] " + m.nome + ": " + m.testo;
+    const listaV = (m.visti || []).filter(Boolean);
+    if (listaV.length) riga += " |§|seen:" + listaV.join(";");
+    const sig = await firmaMessaggio(m.ora, m.nome, m.testo);
+    if (sig) riga += " |§|sig:" + sig;
+    righe.push(riga);
+  }
+  return righe.join("\n") + (righe.length ? "\n" : "");
 }
 
 function avatarVisto(nome) {
@@ -1374,7 +1467,6 @@ function renderMessaggiChat(lista) {
     $(".msg-testo", div).textContent = m.testo;
     $(".msg-ora", div).textContent = m.ora;
 
-    // loghi di chi ha visto (escludi il mittente; per i miei messaggi mostro gli altri)
     const boxVisti = $(".msg-visti", div);
     const vistiUnici = [...new Set((m.visti || []).filter((n) => n && n !== m.nome))];
     if (vistiUnici.length) {
@@ -1389,17 +1481,18 @@ function renderMessaggiChat(lista) {
 async function marcaMessaggiComeVisti(file, testo) {
   if (!utenteCorrente) return testo;
   const me = utenteCorrente.nome;
-  const lista = parseMessaggi(testo);
+  const lista = await parseMessaggi(testo);
   let cambiato = false;
   lista.forEach((m) => {
-    if (m.nome === me) return; // non serve segnare i propri
+    if (m.nome === me) return;
     if (!(m.visti || []).includes(me)) {
       m.visti = [...(m.visti || []), me];
       cambiato = true;
     }
   });
   if (!cambiato) return testo;
-  const nuovo = serializzaMessaggi(lista);
+  // Nota: "seen" non entra nella firma (solo ora|nome|testo), quindi ok aggiornare
+  const nuovo = await serializzaMessaggi(lista);
   try {
     await GoogleDrive.scriviTesto(file, nuovo);
   } catch (e) {
@@ -1430,11 +1523,10 @@ async function caricaMessaggiChat(forza) {
       chatAttiva === "gruppo" ? "gruppo" : chatAttiva
     );
     let testo = await GoogleDrive.leggiTesto(file);
-    // chi apre la chat ha "visto" i messaggi degli altri
     testo = await marcaMessaggiComeVisti(file, testo);
     if (testo !== chatCacheTesto || forza) {
       chatCacheTesto = testo;
-      renderMessaggiChat(parseMessaggi(testo));
+      renderMessaggiChat(await parseMessaggi(testo));
     }
   } catch (e) {
     if (window.console) console.warn("Chat:", e.message);
@@ -1456,12 +1548,15 @@ async function inviaMessaggioChat(testo) {
   try {
     let attuale = "";
     try { attuale = await GoogleDrive.leggiTesto(file); } catch (e) {}
-    // mittente ha già "visto" il proprio messaggio
-    const riga = formattaRiga(utenteCorrente.nome, testo.trim(), [utenteCorrente.nome]);
+    const riga = await formattaRiga(
+      utenteCorrente.nome,
+      testo.trim(),
+      [utenteCorrente.nome]
+    );
     const nuovo = (attuale ? attuale.replace(/\s+$/, "") + "\n" : "") + riga + "\n";
     await GoogleDrive.scriviTesto(file, nuovo);
     chatCacheTesto = nuovo;
-    renderMessaggiChat(parseMessaggi(nuovo));
+    renderMessaggiChat(await parseMessaggi(nuovo));
   } catch (e) {
     toast("Chat", e.message || "Invio non riuscito", "⚠️");
   }
