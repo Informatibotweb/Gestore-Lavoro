@@ -130,7 +130,11 @@ const GoogleDrive = {
       const j = await ris.json();
       this.email = j.email || "";
     } catch (e) {
-      this.email = "";
+      this.email = this.email || "";
+    }
+    // la mail dell'account collegato resta salvata nel browser
+    if (this.email) {
+      try { localStorage.setItem("nexiquar_google_email", this.email); } catch (e) {}
     }
     if (typeof aggiornaStatoCloud === "function") aggiornaStatoCloud();
   },
@@ -141,6 +145,7 @@ const GoogleDrive = {
     this.scadenza = 0;
     this.email = "";
     this.cartella = null;
+    try { localStorage.removeItem("nexiquar_google_email"); } catch (e) {}
     this.cacheUrl.forEach((u) => URL.revokeObjectURL(u));
     this.cacheUrl.clear();
     if (typeof aggiornaStatoCloud === "function") aggiornaStatoCloud();
@@ -280,3 +285,9 @@ const GoogleDrive = {
     }
   },
 };
+
+/* la mail dell'ultimo account collegato resta disponibile anche
+   prima della riconnessione silenziosa (Impostazioni → Account) */
+try {
+  GoogleDrive.email = localStorage.getItem("nexiquar_google_email") || "";
+} catch (e) {}

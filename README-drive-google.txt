@@ -1,8 +1,11 @@
 NEXIQUAR · GOOGLE DRIVE – GUIDA DI CONFIGURAZIONE
 ==================================================
 
-STATO ATTUALE: ✅ Client ID già inserito in drive-google.js.
-Resta da fare: il punto 3 (pubblicare il sito) e il punto 4 (test).
+STATO ATTUALE: ✅ Sito online su https://lavoronx.netlify.app
+               ✅ Client ID inserito e origin autorizzato
+               ✅ Login Google riuscito (consenso dato)
+               ✅ Mail account salvata (Impostazioni → Account → Google Drive)
+Resta da fare: caricare un file e verificarlo nella cartella "Nexiquar" del Drive.
 
 Cosa fa: il pulsante "Collega Google Drive" della finestra File collega il
 programma al TUO Google Drive. I file caricati finiscono nella cartella
@@ -44,3 +47,9 @@ NOTE
    dopo basta ricollegarsi (o premi "Pubblica app" nella schermata di consenso).
  - I file già presenti in locale restano visibili con l'etichetta
    "💾 Questo computer"; quelli nuovi vanno su Google Drive.
+ - ATTENZIONE all'archivio locale: quello creato aprendo index.html sul
+   computer (file://) è SEPARATO da quello del sito online. I file caricati
+   prima della pubblicazione non compaiono su Netlify: vanno ricaricati lì
+   (poi finiscono su Google Drive e sono ovunque).
+ - La mail dell'account Google collegato resta salvata nel browser
+   (Impostazioni → Account → Google Drive) finché non premi "scollega".

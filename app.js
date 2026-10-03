@@ -191,6 +191,7 @@ function entra(utente) {
   elemento("account-ruolo").textContent = ruolo;
   elemento("account-accesso").textContent =
     new Date().toLocaleString("it-IT", { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" });
+  aggiornaAccountGoogle();
 
   elemento("data-oggi").textContent = dataFormattata();
   aggiornaOrologio();
@@ -812,8 +813,10 @@ async function renderFile() {
     const nota = document.createElement("span");
     if (lista.length === 0) {
       icona.textContent = "📁";
-      titolo.textContent = "Il tuo drive è vuoto";
-      nota.textContent = "Trascina qui i file oppure premi “Carica file”.";
+      titolo.textContent = sulCloud ? "Il tuo Google Drive è vuoto" : "Il tuo drive è vuoto";
+      nota.textContent = sulCloud
+        ? "Trascina qui i file: finiranno sul tuo Google Drive, cartella “Nexiquar”."
+        : "Trascina qui i file oppure premi “Carica file”.";
     } else {
       icona.textContent = "🔍";
       titolo.textContent = "Nessun risultato";
@@ -984,9 +987,20 @@ async function caricaFiles(fileList) {
 }
 
 /* ---------- stato della connessione Google Drive ---------- */
+function aggiornaAccountGoogle() {
+  const el = elemento("account-google");
+  if (!el) return;
+  let email = typeof GoogleDrive !== "undefined" ? GoogleDrive.email : "";
+  if (!email) {
+    try { email = localStorage.getItem("nexiquar_google_email") || ""; } catch (e) {}
+  }
+  el.textContent = email || "Non collegato";
+}
+
 function aggiornaStatoCloud() {
   const pulsante = elemento("pulsante-cloud");
   const stato = elemento("stato-cloud");
+  aggiornaAccountGoogle();
   if (!pulsante || !stato || typeof GoogleDrive === "undefined") return;
 
   const connesso = GoogleDrive.connesso;
