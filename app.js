@@ -846,7 +846,7 @@ async function renderFile() {
       icona.textContent = "📁";
       titolo.textContent = sulCloud ? "Il tuo Google Drive è vuoto" : "Il tuo drive è vuoto";
       nota.textContent = sulCloud
-        ? "Trascina qui i file: finiranno sul tuo Google Drive, cartella “Nexiquar”."
+        ? "Trascina qui i file: verranno salvati sul tuo Google Drive completo."
         : "Trascina qui i file oppure premi “Carica file”.";
     } else {
       icona.textContent = "🔍";
@@ -1057,7 +1057,7 @@ function aggiornaStatoCloud() {
     pulsante.classList.remove("off");
     pulsante.removeAttribute("aria-disabled");
     pulsante.textContent = "☁ Collega Google Drive";
-    pulsante.title = "I file caricati finiranno sul tuo Google Drive";
+    pulsante.title = "Accesso completo a tutti i file del Drive";
   }
 }
 
@@ -1083,7 +1083,7 @@ elemento("pulsante-cloud").addEventListener("click", async () => {
     await GoogleDrive.apri();
     toast("Google Drive",
       "Collegato" + (GoogleDrive.email ? " – " + GoogleDrive.email : "") +
-      ". I file caricati finiranno sul tuo Drive.", "☁️");
+      ". Accesso al Drive completo attivo.", "☁️");
   } catch (e) {
     toast("Google Drive", e.message, "⚠️");
   } finally {
@@ -1302,31 +1302,57 @@ function selezionaChat(id) {
 }
 
 function parseMessaggi(testo) {
-  // Formato riga: [YYYY-MM-DD HH:MM] Nome: testo
+  // Formato: [YYYY-MM-DD HH:MM] Nome: testo |§|seen:Nome1;Nome2
   const righe = (testo || "").split(/\r?\n/);
   const out = [];
   const re = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s+(.+?):\s*(.*)$/;
   for (const r of righe) {
+    if (!r.trim()) continue;
     const m = r.match(re);
-    if (m) out.push({ ora: m[1], nome: m[2], testo: m[3] });
+    if (!m) continue;
+    let corpo = m[3];
+    let visti = [];
+    const sep = corpo.lastIndexOf(" |§|seen:");
+    if (sep >= 0) {
+      const parteSeen = corpo.slice(sep + " |§|seen:".length);
+      corpo = corpo.slice(0, sep);
+      visti = parteSeen.split(";").map((s) => s.trim()).filter(Boolean);
+    }
+    out.push({ ora: m[1], nome: m[2], testo: corpo, visti, raw: r });
   }
   return out;
 }
 
-function formattaRiga(nome, testo) {
+function formattaRiga(nome, testo, visti) {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const stamp =
     d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
     " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
-  return "[" + stamp + "] " + nome + ": " + testo.replace(/\r?\n/g, " ");
+  let riga = "[" + stamp + "] " + nome + ": " + testo.replace(/\r?\n/g, " ");
+  const lista = (visti || []).filter(Boolean);
+  if (lista.length) riga += " |§|seen:" + lista.join(";");
+  return riga;
+}
+
+function serializzaMessaggi(lista) {
+  return lista.map((m) => formattaRiga(m.nome, m.testo, m.visti)).join("\n") + (lista.length ? "\n" : "");
+}
+
+function avatarVisto(nome) {
+  const el = document.createElement("span");
+  el.className = "visto-avatar";
+  el.title = nome + " ha visto";
+  el.textContent = (nome || "?").trim().charAt(0).toUpperCase();
+  el.setAttribute("aria-label", nome + " ha visto il messaggio");
+  applicaColori(el, nome);
+  return el;
 }
 
 function renderMessaggiChat(lista) {
   const box = elemento("chat-messaggi");
   const vuoto = elemento("chat-vuoto");
   if (!box) return;
-  // rimuovi messaggi precedenti ma tieni il vuoto
   $$(".msg-chat", box).forEach((el) => el.remove());
   if (!lista.length) {
     if (vuoto) vuoto.classList.remove("nascosto");
@@ -1340,13 +1366,47 @@ function renderMessaggiChat(lista) {
     div.innerHTML =
       '<span class="msg-nome"></span>' +
       '<span class="msg-testo"></span>' +
-      '<span class="msg-ora"></span>';
+      '<div class="msg-meta">' +
+        '<span class="msg-ora"></span>' +
+        '<span class="msg-visti"></span>' +
+      '</div>';
     $(".msg-nome", div).textContent = m.nome;
     $(".msg-testo", div).textContent = m.testo;
     $(".msg-ora", div).textContent = m.ora;
+
+    // loghi di chi ha visto (escludi il mittente; per i miei messaggi mostro gli altri)
+    const boxVisti = $(".msg-visti", div);
+    const vistiUnici = [...new Set((m.visti || []).filter((n) => n && n !== m.nome))];
+    if (vistiUnici.length) {
+      vistiUnici.forEach((n) => boxVisti.appendChild(avatarVisto(n)));
+    }
     box.appendChild(div);
   });
   box.scrollTop = box.scrollHeight;
+}
+
+/** Segna come letti i messaggi altrui e salva su Drive se qualcosa cambia */
+async function marcaMessaggiComeVisti(file, testo) {
+  if (!utenteCorrente) return testo;
+  const me = utenteCorrente.nome;
+  const lista = parseMessaggi(testo);
+  let cambiato = false;
+  lista.forEach((m) => {
+    if (m.nome === me) return; // non serve segnare i propri
+    if (!(m.visti || []).includes(me)) {
+      m.visti = [...(m.visti || []), me];
+      cambiato = true;
+    }
+  });
+  if (!cambiato) return testo;
+  const nuovo = serializzaMessaggi(lista);
+  try {
+    await GoogleDrive.scriviTesto(file, nuovo);
+  } catch (e) {
+    if (window.console) console.warn("Visti chat:", e.message);
+    return testo;
+  }
+  return nuovo;
 }
 
 async function caricaMessaggiChat(forza) {
@@ -1369,7 +1429,9 @@ async function caricaMessaggiChat(forza) {
       utenteCorrente.nome,
       chatAttiva === "gruppo" ? "gruppo" : chatAttiva
     );
-    const testo = await GoogleDrive.leggiTesto(file);
+    let testo = await GoogleDrive.leggiTesto(file);
+    // chi apre la chat ha "visto" i messaggi degli altri
+    testo = await marcaMessaggiComeVisti(file, testo);
     if (testo !== chatCacheTesto || forza) {
       chatCacheTesto = testo;
       renderMessaggiChat(parseMessaggi(testo));
@@ -1394,7 +1456,8 @@ async function inviaMessaggioChat(testo) {
   try {
     let attuale = "";
     try { attuale = await GoogleDrive.leggiTesto(file); } catch (e) {}
-    const riga = formattaRiga(utenteCorrente.nome, testo.trim());
+    // mittente ha già "visto" il proprio messaggio
+    const riga = formattaRiga(utenteCorrente.nome, testo.trim(), [utenteCorrente.nome]);
     const nuovo = (attuale ? attuale.replace(/\s+$/, "") + "\n" : "") + riga + "\n";
     await GoogleDrive.scriviTesto(file, nuovo);
     chatCacheTesto = nuovo;
