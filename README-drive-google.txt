@@ -12,6 +12,27 @@ Scope: drive + openid email
 → accesso COMPLETO a tutto il Google Drive dell'account
   (non solo la cartella Nexiquar). I file chat restano in Nexiquar/.
 
+CARTELLE (navigazione in File)
+------------------------------
+In File vedi le cartelle del Drive (Mattia, Ahmed, Silvio, Nexiquar…) come
+in Google Drive:
+- clic su una cartella = la apre; il percorso "☁ Il mio Drive › Mattia"
+  mostra dove sei e permette di tornare indietro.
+- i file caricati finiscono nella cartella APERTA (in radice se non ne apri).
+- "＋ Nuova cartella" crea una cartella dove ti trovi (Invio = crea).
+- la cerca in alto cerca in TUTTO il Drive, dentro e fuori dalle cartelle.
+- i file di questo computer compaiono solo in radice (badge 💾).
+- i documenti Google (Doc/Fogli) si aprono online con "Apri su Google ↗".
+
+SE LE CARTELLE NON SI VEDONO
+----------------------------
+Il browser ha ancora un permesso vecchio (scope drive.file): l'app non
+vede le cartella e mostra il messaggio "Serve autorizzazione per le
+cartelle" (o il pulsante "☁ Collega Google Drive").
+Soluzione: premi "☁ Collega Google Drive" e riaccetta i permessi nella
+finestra di Google (se compare "app non verificata": Avanzato →
+"Vai a lavoronx.netlify.app (non sicuro)"). Serve farlo una volta sola.
+
 CHAT
 ----
 I file di testo nella cartella Nexiquar:
@@ -24,7 +45,7 @@ Formato riga messaggio:
   [YYYY-MM-DD HH:MM] Nome Cognome: testo |§|seen:Nome1;Nome2
   (i nomi dopo seen: sono chi ha aperto e visualizzato il messaggio)
 
-Si aggiornano a ogni invio e ogni ~8 secondi se la finestra Chat è aperta.
+Si aggiornano a ogni invio e ogni ~4 secondi se la finestra Chat è aperta.
 
 PUBBLICAZIONE
 -------------

@@ -168,10 +168,19 @@ const GoogleDrive = {
       if (ris.status === 401) throw Object.assign(new Error("token"), { scaduto: true });
       if (!ris.ok) {
         let msg = "Google Drive ha risposto " + ris.status;
+        let dettaglio = "";
         try {
           const j = await ris.json();
-          if (j.error && j.error.message) msg += " – " + j.error.message;
+          if (j.error && j.error.message) dettaglio = j.error.message;
         } catch (e) {}
+        if (dettaglio) msg += " – " + dettaglio;
+        // consenso vecchio (scope insufficiente) → serve ricollegarsi
+        if (ris.status === 403 && /insufficient|permission|scope/i.test(dettaglio)) {
+          this.disconnetti();
+          throw new Error(
+            "Serve autorizzazione per le cartelle: premi “Collega Google Drive” e consenti di nuovo l'accesso."
+          );
+        }
         throw new Error(msg);
       }
       return ris;
@@ -218,35 +227,87 @@ const GoogleDrive = {
     return c.id;
   },
 
-  /* ---------- operazioni ---------- */
-  async elenco() {
-    // Drive completo: tutti i file non nel cestino (escluse le sole cartelle vuote di sistema)
-    const q = encodeURIComponent(
-      "trashed=false and mimeType!='application/vnd.google-apps.folder'"
-    );
-    const ris = await this.chiedi(
-      "https://www.googleapis.com/drive/v3/files?q=" + q +
-        "&pageSize=500&orderBy=modifiedTime desc" +
-        "&fields=files(id,name,mimeType,size,createdTime,modifiedTime,parents)"
-    );
-    const j = await ris.json();
-    return (j.files || []).map((f) => ({
+  /* ---------- operazioni: file e cartelle ---------- */
+  mappaVoce(f) {
+    const cartella = f.mimeType === "application/vnd.google-apps.folder";
+    return {
       id: f.id,
       origine: "google",
+      cartella: cartella,
+      googleNativo:
+        !cartella && (f.mimeType || "").startsWith("application/vnd.google-apps."),
       nome: f.name,
       tipo: f.mimeType || "application/octet-stream",
       size: Number(f.size || 0),
       data: f.modifiedTime || f.createdTime || new Date().toISOString(),
-    }));
+    };
   },
 
-  async salva(file) {
-    // Caricamento sul Drive completo (radice "Il mio Drive")
+  /* contenuto di una cartella; senza padreId = radice "Il mio Drive" */
+  async contenuto(padreId) {
+    const q = encodeURIComponent(
+      (padreId ? "'" + padreId + "'" : "'root'") + " in parents and trashed=false"
+    );
+    const ris = await this.chiedi(
+      "https://www.googleapis.com/drive/v3/files?q=" + q +
+        "&pageSize=1000&fields=files(id,name,mimeType,size,createdTime,modifiedTime)"
+    );
+    const j = await ris.json();
+    return (j.files || []).map((f) => this.mappaVoce(f));
+  },
+
+  /* ricerca globale per nome su tutto il Drive (risultati paginati) */
+  async cerca(testo) {
+    const q = encodeURIComponent(
+      "name contains '" + testo.replace(/\\/g, "\\\\").replace(/'/g, "\\'") +
+        "' and trashed=false"
+    );
+    const campi =
+      "&pageSize=500&fields=files(id,name,mimeType,size,createdTime,modifiedTime),nextPageToken";
+    const base = "https://www.googleapis.com/drive/v3/files?q=" + q + campi;
+    const out = [];
+    let url = base;
+    for (let giro = 0; giro < 5 && url; giro++) {
+      const ris = await this.chiedi(url);
+      const j = await ris.json();
+      out.push(...(j.files || []).map((f) => this.mappaVoce(f)));
+      url = j.nextPageToken
+        ? base + "&pageToken=" + encodeURIComponent(j.nextPageToken)
+        : null;
+    }
+    return out;
+  },
+
+  async creaCartella(nome, padreId) {
+    const meta = { name: nome, mimeType: "application/vnd.google-apps.folder" };
+    if (padreId) meta.parents = [padreId];
+    const ris = await this.chiedi(
+      "https://www.googleapis.com/drive/v3/files?fields=id,name,mimeType,createdTime",
+      {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(meta),
+      }
+    );
+    return this.mappaVoce(await ris.json());
+  },
+
+  /* elenco della radice (compatibilità con le chiamate vecchie) */
+  async elenco() {
+    return this.contenuto(null);
+  },
+
+  async salva(file, padreId) {
+    // Caricamento nella cartella aperta (radice "Il mio Drive" se non specificata)
     const fd = new FormData();
     fd.append(
       "metadata",
       new Blob(
-        [JSON.stringify({ name: file.name })],
+        [JSON.stringify(
+          padreId
+            ? { name: file.name, parents: [padreId] }
+            : { name: file.name }
+        )],
         { type: "application/json" }
       )
     );
@@ -267,6 +328,9 @@ const GoogleDrive = {
   },
 
   async url(rec) {
+    // i file nativi Google (Doc/Fogli/Slide) non si scaricano: si aprono online
+    if (rec && rec.googleNativo)
+      return "https://drive.google.com/open?id=" + encodeURIComponent(rec.id);
     if (this.cacheUrl.has(rec.id)) return this.cacheUrl.get(rec.id);
     const ris = await this.chiedi(
       "https://www.googleapis.com/drive/v3/files/" + rec.id + "?alt=media"
