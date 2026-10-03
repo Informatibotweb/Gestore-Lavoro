@@ -1,6 +1,9 @@
 NEXIQUAR · GOOGLE DRIVE – GUIDA DI CONFIGURAZIONE
 ==================================================
 
+STATO ATTUALE: ✅ Client ID già inserito in drive-google.js.
+Resta da fare: il punto 3 (pubblicare il sito) e il punto 4 (test).
+
 Cosa fa: il pulsante "Collega Google Drive" della finestra File collega il
 programma al TUO Google Drive. I file caricati finiscono nella cartella
 "Nexiquar" del tuo Drive e li vedi da telefono, tablet e altri computer.
@@ -9,37 +12,11 @@ Prerequisito: il sito pubblicato su internet (es. Netlify). Da file:// Google
 non concede l'accesso (origine non autorizzata).
 
 --------------------------------------------------
-1) CREA L'OAUTH CLIENT ID (5 minuti, una tantum)
+1) GIÀ FATTO – OAuth Client ID
 --------------------------------------------------
-Vai su https://console.cloud.google.com/ e acconta con il tuo Google.
-
- a. In alto a sinistra → "Nuovo progetto" → nome: Nexiquar → Crea.
- b. Menu ☰ → "API e servizi" → "Libreria" → cerca "Google Drive API"
-    → "Abilita".
- c. Menu ☰ → "API e servizi" → "Schermata di consenso OAuth"
-    → Tipo utente: "Esterno" → Crea.
-    - Nome app: Nexiquar
-    - Email di supporto: la tua email
-    - Sito della home: l'URL del sito pubblicato (es. https://nexiquar.netlify.app)
-    - Salva e continua → Aggiungi utenti di prova:
-      aggiungi la TUA email (serve finché l'app è in "Testing")
-    - Salva e continua →orna indietro alla dashboard.
- d. Menu ☰ → "API e servizi" → "Credenziali" → "+ Crea credenziali"
-    → "ID cliente OAuth".
-    - Tipo applicazione: "Applicazione Web"
-    - Nome: Nexiquar
-    - Autorizza gli origini JavaScript:
-        http://localhost:8000                      (per i test locali)
-        https://nexiquar.netlify.app               (il sito pubblicato)
-        https://IL-TUO-SITO.netlify.app             (se usi un altro indirizzo)
-      NON aggiungere file:// : Google lo rifiuta.
-    - Crea → copia il "Client ID" (finisce con .apps.googleusercontent.com)
-
---------------------------------------------------
-2) DAMMI IL CLIENT ID
---------------------------------------------------
-Incollamelo qui in chat: lo inserisco io in drive-google.js al posto della
-riga GOOGLE_CLIENT_ID = "".
+Client ID: 1067372020805-i47ki5du62c4eotbee6b00q493lnipjm.apps.googleusercontent.com
+Già inserito in drive-google.js. Per cambiarlo: modifica la riga
+GOOGLE_CLIENT_ID e aggiorna drive-google.js?v=N in index.html.
 
 --------------------------------------------------
 3) PUBBLICA IL SITO SU NETLIFY
@@ -47,7 +24,9 @@ riga GOOGLE_CLIENT_ID = "".
  - Vai su https://app.netlify.com/ (lo stesso account di nexiquar.netlify.app)
  - "Add new site" → "Deploy manually" → trascina la cartella del programma
  - Aspetta il deploy e copia l'URL (es. https://nome-sito.netlify.app)
- - Se l'URL non è tra le origin autorizzate al punto 1d, aggiungilo e salva.
+ - Se l'URL non è tra gli origin autorizzati su Google Cloud Console
+   (API e servizi → Credenziali → ID cliente OAuth → Authorized JavaScript
+   origins), aggiungilo e salva.
 
 --------------------------------------------------
 4) TEST

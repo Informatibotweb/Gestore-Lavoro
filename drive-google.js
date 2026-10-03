@@ -12,7 +12,8 @@
    ============================================================ */
 
 /* >>> INCOLLA QUI IL TUO OAUTH CLIENT ID DI GOOGLE CLOUD <<< */
-const GOOGLE_CLIENT_ID = "";
+const GOOGLE_CLIENT_ID =
+  "1067372020805-i47ki5du62c4eotbee6b00q493lnipjm.apps.googleusercontent.com";
 
 const GOOGLE_SCOPE =
   "https://www.googleapis.com/auth/drive.file openid email";
@@ -92,13 +93,16 @@ const GoogleDrive = {
         },
         error_callback: (err) => {
           if (silenzioso) return rifiuta(new Error("silenzioso"));
-          rifiuta(
-            new Error(
-              err && err.type === "popup_closed"
-                ? "Finestra di accesso chiusa."
-                : "Accesso Google non riuscito."
-            )
-          );
+          const tipo = err && err.type;
+          const msg =
+            tipo === "popup_closed"
+              ? "Hai chiuso la finestra di accesso."
+              : tipo === "popup_failed_to_open"
+                ? "Il browser ha bloccato la finestra di accesso: consenti i popup per questo sito."
+                : "Accesso Google non riuscito" +
+                  (err && err.message ? " (" + err.message + ")"
+                    : tipo ? " (" + tipo + ")" : "") + ".";
+          rifiuta(new Error(msg));
         },
       });
       client.requestAccessToken();
