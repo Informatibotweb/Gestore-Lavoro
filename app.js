@@ -49,10 +49,30 @@ function applicaColori(el, nome) {
    ============================================================ */
 let accountScelto = null;
 
+function passwordOverrides() {
+  try {
+    return JSON.parse(localStorage.getItem("nexiquar_pwd_v1") || "{}");
+  } catch (e) { return {}; }
+}
+
+function salvaPasswordOverride(nome, nuova) {
+  const o = passwordOverrides();
+  o[nome] = nuova;
+  try { localStorage.setItem("nexiquar_pwd_v1", JSON.stringify(o)); } catch (e) {}
+}
+
 function credenziali() {
   if (typeof CREDENZIALI === "undefined") return null;
-  return CREDENZIALI;
+  const ov = passwordOverrides();
+  return CREDENZIALI.map((acc) => {
+    const copia = Object.assign({}, acc);
+    if (ov[acc.nome]) copia.password = ov[acc.nome];
+    return copia;
+  });
 }
+
+let utenteCorrente = null;
+const GOOGLE_OBBLIGATORIO = "nexiquar@gmail.com";
 
 // Passo 1: lista account
 function mostraAccount() {
@@ -139,7 +159,8 @@ elemento("form-accesso").addEventListener("submit", (e) => {
     elemento("password").focus();
     return;
   }
-  entra(accountScelto);
+  // Dopo la password corretta: obbligatorio accedere a Google come nexiquar@gmail.com
+  avviaAccessoGoogleObbligatorio(accountScelto);
 });
 
 /* ============================================================
@@ -170,6 +191,7 @@ function aggiornaOrologio() {
 }
 
 function entra(utente) {
+  utenteCorrente = utente;
   const nome = utente.nome;
   const iniziale = nome.trim().charAt(0).toUpperCase();
 
@@ -205,7 +227,9 @@ function entra(utente) {
 }
 
 function esci() {
+  fermaPollChat();
   chiudiTutteLeFinestre();
+  utenteCorrente = null;
   try { sessionStorage.removeItem("utenteLoggato"); } catch (e) {}
   elemento("schermata-interni").classList.remove("attiva");
   elemento("schermata-accesso").classList.add("attiva");
@@ -224,11 +248,13 @@ const APP = {
   impostazioni: elemento("app-impostazioni"),
   calendario:   elemento("app-calendario"),
   file:         elemento("app-file"),
+  chat:         elemento("app-chat"),
 };
 
 function nomeAppPer(id) {
   if (id === "calendario") return "Calendario";
   if (id === "file") return "File";
+  if (id === "chat") return "Chat";
   return "Impostazioni";
 }
 
@@ -254,6 +280,7 @@ function apriApp(nome) {
 
   if (nome === "calendario") renderCalendario();
   if (nome === "file") renderFile();
+  if (nome === "chat") apriChat();
 }
 
 function chiudiFinestra(finestra) {
@@ -278,8 +305,12 @@ $$(".finestra-app .luce").forEach((luce) => {
     if (azione === "ingrandisci") finestra.classList.toggle("ingrandita");
     if (azione === "riduci") {
       chiudiFinestra(finestra);
-      toast(nomeAppPer(finestra.id.includes("calendario") ? "calendario" : "impostazioni"),
-            "Ridotto a icona nel Dock", "➖");
+      const idF = finestra.id || "";
+      let n = "impostazioni";
+      if (idF.includes("calendario")) n = "calendario";
+      else if (idF.includes("file")) n = "file";
+      else if (idF.includes("chat")) n = "chat";
+      toast(nomeAppPer(n), "Ridotto a icona nel Dock", "➖");
     }
   });
 });
@@ -594,7 +625,6 @@ const Drive = {
   db: null,
   tipo: "ls",
   pronto: false,
-  percorso: [], // cartelle Google aperte: [{id, nome}]
 
   apriIdb() {
     return new Promise((risolvi) => {
@@ -614,20 +644,12 @@ const Drive = {
 
   async init() {
     if (this.pronto) return;
-    // una sola inizializzazione: le chiamate concorrenti aspettano la stessa,
-    // così "tipo" (idb/ls) non cambia mai a metà corsa tra salva e lettura
-    if (!this.avvio) {
-      this.avvio = (async () => {
-        this.db = await this.apriIdb();
-        this.tipo = this.db ? "idb" : "ls";
-        this.pronto = true;
-        this.avvio = null;
-        // prova a rientrare in Google Drive senza mostrare finestre
-        if (typeof GoogleDrive !== "undefined" && GoogleDrive.disponibile)
-          GoogleDrive.riconnetti().then((ok) => { if (ok) aggiornaStatoCloud(); });
-      })();
-    }
-    return this.avvio;
+    this.db = await this.apriIdb();
+    this.tipo = this.db ? "idb" : "ls";
+    this.pronto = true;
+    // prova a rientrare in Google Drive senza mostrare finestre
+    if (typeof GoogleDrive !== "undefined" && GoogleDrive.disponibile)
+      GoogleDrive.riconnetti().then((ok) => { if (ok) aggiornaStatoCloud(); });
   },
 
   leggiLs() {
@@ -638,25 +660,10 @@ const Drive = {
     localStorage.setItem(CHIAVE_FILE, JSON.stringify(lista));
   },
 
-  /* ---------- navigazione nelle cartelle Google ---------- */
-  cartellaAttuale() {
-    return this.percorso.length
-      ? this.percorso[this.percorso.length - 1].id
-      : null;
-  },
-  apriCartella(rec) {
-    this.percorso.push({ id: rec.id, nome: rec.nome });
-    return renderFile();
-  },
-  tornaA(indice) {
-    this.percorso = this.percorso.slice(0, indice);
-    return renderFile();
-  },
-
-  async elenco(termine) {
+  async elenco() {
     await this.init();
 
-    // file locali di questo computer
+    // file locali
     let locali = [];
     if (this.tipo === "idb") {
       locali = await new Promise((risolvi) => {
@@ -670,37 +677,39 @@ const Drive = {
       locali = this.leggiLs();
     }
 
-    // Google Drive (se disponibile)
-    const gg = typeof GoogleDrive !== "undefined" && GoogleDrive.disponibile;
-    let connesso = gg && GoogleDrive.connesso;
-    if (gg && !connesso) {
-      // tentativo silenzioso: se il consenso è già stato dato rientra da solo
-      connesso = await GoogleDrive.riconnetti();
-      if (connesso) aggiornaStatoCloud();
-    }
-    if (!connesso) return locali;
-
-    try {
-      if (termine) {
-        // la ricerca vale su tutto il Drive, più i file locali
-        const g = await GoogleDrive.cerca(termine);
-        return g.concat(locali);
+    // file su Google Drive (se collegato)
+    if (typeof GoogleDrive !== "undefined" && GoogleDrive.disponibile) {
+      if (GoogleDrive.connesso) {
+        try {
+          const g = await GoogleDrive.elenco();
+          return locali.concat(g).sort((a, b) => b.data.localeCompare(a.data));
+        } catch (e) {
+          if (window.console) console.warn("Google Drive:", e.message);
+        }
+      } else {
+        // tentativo silenzioso: se il consenso è già stato dato rientra da solo
+        const ok = await GoogleDrive.riconnetti();
+        if (ok) {
+          try {
+            const g = await GoogleDrive.elenco();
+            aggiornaStatoCloud();
+            return locali.concat(g).sort((a, b) => b.data.localeCompare(a.data));
+          } catch (e) {
+            if (window.console) console.warn("Google Drive:", e.message);
+          }
+        }
       }
-      const g = await GoogleDrive.contenuto(this.cartellaAttuale());
-      // in radice mostriamo anche i file di questo computer
-      return this.percorso.length ? g : g.concat(locali);
-    } catch (e) {
-      if (window.console) console.warn("Google Drive:", e.message);
-      return locali;
     }
+
+    return locali.sort((a, b) => b.data.localeCompare(a.data));
   },
 
   async salva(file) {
     await this.init();
 
-    // collegato a Google Drive → il file finisce nella cartella aperta
+    // collegato a Google Drive → il file finisce sul Drive dell'utente
     if (typeof GoogleDrive !== "undefined" && GoogleDrive.connesso) {
-      return GoogleDrive.salva(file, this.cartellaAttuale());
+      return GoogleDrive.salva(file);
     }
 
     const rec = {
@@ -805,10 +814,8 @@ let urlCorrente = null;
 
 async function renderFile() {
   await Drive.init();
-  const termini = (elemento("cerca-file").value || "").trim().toLowerCase();
-  const lista = await Drive.elenco(termini);
+  const lista = await Drive.elenco();
   aggiornaStatoCloud();
-  aggiornaPercorso();
 
   const elenco = elemento("elenco-file");
   const vuoto = elemento("drive-vuoto");
@@ -816,72 +823,40 @@ async function renderFile() {
   const pannello = elemento("pannello-file-conta");
   const sulCloud =
     typeof GoogleDrive !== "undefined" && GoogleDrive.connesso;
-  const dentroCartella = Drive.percorso.length > 0;
 
-  // placeholder della ricerca: online vale su tutto il Drive
-  const campoCerca = elemento("cerca-file");
-  campoCerca.placeholder = sulCloud ? "Cerca in tutto il Drive…" : "Cerca file…";
-
-  const cartelle = lista.filter((f) => f.cartella);
-  const file = lista.filter((f) => !f.cartella);
-  const pezzi = [];
-  if (cartelle.length)
-    pezzi.push(cartelle.length === 1 ? "1 cartella" : cartelle.length + " cartelle");
-  pezzi.push(file.length === 1 ? "1 file" : file.length + " file");
-  if (conta) conta.textContent = pezzi.join(" · ");
+  if (conta) conta.textContent = lista.length === 1 ? "1 file" : lista.length + " file";
   if (pannello)
-    pannello.textContent = lista.length === 0 ? "Nessun contenuto."
-      : cartelle.length + " cartelle · " + file.length + " file.";
+    pannello.textContent = lista.length === 0 ? "Nessun file salvato."
+      : lista.length === 1 ? "1 file salvato." : lista.length + " file salvati.";
 
-  const filtrati = lista.filter(
-    (f) => !termini || (f.nome || "").toLowerCase().includes(termini)
-  );
-  // prima le cartelle (ordinate per nome), poi i file (per data)
-  const ordinati = filtrati
-    .filter((f) => f.cartella)
-    .sort((a, b) => (a.nome || "").localeCompare(b.nome || ""))
-    .concat(
-      filtrati
-        .filter((f) => !f.cartella)
-        .sort((a, b) => (b.data || "").localeCompare(a.data || ""))
-    );
+  const termini = (elemento("cerca-file").value || "").toLowerCase();
+  const filtrati = lista.filter((f) => !termini || f.nome.toLowerCase().includes(termini));
 
   elenco.innerHTML = "";
-  vuoto.classList.toggle("nascosto", ordinati.length > 0);
+  vuoto.classList.toggle("nascosto", filtrati.length > 0);
 
-  // stato vuoto: ricerca senza risultati, cartella vuota o drive vuoto
-  if (ordinati.length === 0) {
+  // stato vuoto: drive vuoto oppure ricerca senza risultati
+  if (filtrati.length === 0) {
     vuoto.innerHTML = "";
     const icona = document.createElement("span");
     icona.className = "icona-vuota";
     const titolo = document.createElement("p");
     const nota = document.createElement("span");
-    if (termini) {
+    if (lista.length === 0) {
+      icona.textContent = "📁";
+      titolo.textContent = sulCloud ? "Il tuo Google Drive è vuoto" : "Il tuo drive è vuoto";
+      nota.textContent = sulCloud
+        ? "Trascina qui i file: finiranno sul tuo Google Drive, cartella “Nexiquar”."
+        : "Trascina qui i file oppure premi “Carica file”.";
+    } else {
       icona.textContent = "🔍";
       titolo.textContent = "Nessun risultato";
-      nota.textContent = "Nessun file corrisponde a “" + campoCerca.value + "”.";
-    } else if (sulCloud && dentroCartella) {
-      icona.textContent = "📂";
-      titolo.textContent = "Questa cartella è vuota";
-      nota.textContent = "Trascina qui i file: finiranno in “" +
-        Drive.percorso[Drive.percorso.length - 1].nome + "”.";
-    } else if (sulCloud) {
-      icona.textContent = "📁";
-      titolo.textContent = "Il tuo Google Drive è vuoto";
-      nota.textContent = "Trascina qui i file oppure premi “Carica file”.";
-    } else {
-      icona.textContent = "📁";
-      titolo.textContent = "Il tuo drive è vuoto";
-      nota.textContent = "Trascina qui i file oppure premi “Carica file”.";
+      nota.textContent = "Nessun file corrisponde a “" + elemento("cerca-file").value + "”.";
     }
     vuoto.append(icona, titolo, nota);
   }
 
-  ordinati.forEach((f, i) => {
-      if (f.cartella) {
-        elenco.appendChild(creaCardCartella(f, i));
-        return;
-      }
+  filtrati.forEach((f, i) => {
       const card = document.createElement("div");
       card.className = "card-file";
       card.style.animationDelay = Math.min(i * 0.03, 0.3) + "s";
@@ -939,112 +914,7 @@ async function renderFile() {
     });
 }
 
-/* ---------- card di una cartella Google ---------- */
-function creaCardCartella(f, i) {
-  const card = document.createElement("div");
-  card.className = "card-file cartella";
-  card.style.animationDelay = Math.min(i * 0.03, 0.3) + "s";
-  const quando = new Date(f.data).toLocaleDateString("it-IT",
-    { day: "2-digit", month: "short", year: "numeric" });
-
-  const antemina = document.createElement("div");
-  antemina.className = "antemina-file";
-  antemina.textContent = "📁";
-
-  const nome = document.createElement("div");
-  nome.className = "nome-file";
-  nome.textContent = f.nome;
-  nome.title = f.nome;
-
-  const meta = document.createElement("div");
-  meta.className = "meta-file";
-  meta.textContent = "Cartella · " + quando + " · ☁ Google";
-
-  const azioni = document.createElement("div");
-  azioni.className = "azioni-card";
-  [["apri", "Apri"], ["elimina", "Elimina"]].forEach(([a, etichetta]) => {
-    const b = document.createElement("button");
-    b.dataset.azione = a;
-    b.textContent = etichetta;
-    if (a === "elimina") b.className = "cancella";
-    azioni.appendChild(b);
-  });
-
-  card.append(antemina, nome, meta, azioni);
-  card.addEventListener("click", (e) => {
-    const azione = e.target.closest("button")?.dataset.azione;
-    if (azione === "elimina") { eliminaRecord(f); return; }
-    Drive.apriCartella(f);
-  });
-  return card;
-}
-
-/* ---------- breadcrumb: Il mio Drive › Mattia › … ---------- */
-function aggiornaPercorso() {
-  const nav = elemento("percorso-drive");
-  const riga = elemento("riga-percorso");
-  const nuova = elemento("nuova-cartella");
-  if (!nav || !riga) return;
-
-  const connesso = typeof GoogleDrive !== "undefined" &&
-    GoogleDrive.disponibile && GoogleDrive.connesso;
-  riga.classList.toggle("nascosto", !connesso);
-  nav.innerHTML = "";
-  if (!connesso) return;
-
-  const termini = (elemento("cerca-file").value || "").trim();
-  if (nuova) nuova.classList.toggle("nascosto", !!termini);
-
-  if (termini) {
-    const voce = document.createElement("span");
-    voce.className = "perc-attuale";
-    voce.textContent = "🔍 In tutto il Drive: “" + termini + "”";
-    nav.appendChild(voce);
-    return;
-  }
-
-  const segmenti = [{ id: null, nome: "☁ Il mio Drive" }].concat(Drive.percorso);
-  segmenti.forEach((s, i) => {
-    if (i > 0) {
-      const sep = document.createElement("span");
-      sep.className = "perc-sep";
-      sep.textContent = "›";
-      nav.appendChild(sep);
-    }
-    const b = document.createElement("button");
-    b.type = "button";
-    const ultimo = i === segmenti.length - 1;
-    b.className = "perc-seg" + (ultimo ? " attuale" : "");
-    b.textContent = s.nome;
-    if (!ultimo) b.addEventListener("click", () => Drive.tornaA(i));
-    nav.appendChild(b);
-  });
-}
-
-/* file Google nativi (Docs, Fogli, …): non si scaricano, si aprono online */
-function googleNativo(rec) {
-  return !!rec && rec.origine === "google" &&
-    (rec.tipo || "").startsWith("application/vnd.google-apps.") &&
-    rec.tipo !== "application/vnd.google-apps.folder";
-}
-
-function urlGoogleOnline(rec) {
-  const t = rec.tipo;
-  if (t === "application/vnd.google-apps.document")
-    return "https://docs.google.com/document/d/" + rec.id + "/edit";
-  if (t === "application/vnd.google-apps.spreadsheet")
-    return "https://docs.google.com/spreadsheets/d/" + rec.id + "/edit";
-  if (t === "application/vnd.google-apps.presentation")
-    return "https://docs.google.com/presentation/d/" + rec.id + "/edit";
-  return "https://drive.google.com/open?id=" + rec.id;
-}
-
 function scaricaRecord(rec) {
-  if (googleNativo(rec)) {
-    window.open(urlGoogleOnline(rec), "_blank", "noopener");
-    toast("Google", "“" + rec.nome + "” è un file Google: si apre online.", "↗️");
-    return;
-  }
   Drive.url(rec).then((u) => {
     const a = document.createElement("a");
     a.href = u;
@@ -1057,11 +927,8 @@ function scaricaRecord(rec) {
 }
 
 async function eliminaRecord(rec) {
-  const messaggio = rec.cartella
-    ? "Spostare la cartella “" + rec.nome + "” (con tutti i suoi file) nel cestino di Google Drive?"
-    : "Eliminare “" + rec.nome + "” " +
-      (rec.origine === "google" ? "dal tuo Google Drive" : "dal drive") + "?";
-  if (!confirm(messaggio)) return;
+  const dove = rec.origine === "google" ? "dal tuo Google Drive" : "dal drive";
+  if (!confirm("Eliminare “" + rec.nome + "” " + dove + "?")) return;
   try {
     await Drive.elimina(rec);
   } catch (e) {
@@ -1082,29 +949,8 @@ async function apriAnteprima(rec) {
   modal.classList.remove("nascosto");
 
   if (urlCorrente && urlCorrente.startsWith("blob:")) URL.revokeObjectURL(urlCorrente);
-  urlCorrente = null;
+  urlCorrente = await Drive.url(rec);
   elemento("scarica-modal").onclick = () => scaricaRecord(rec);
-
-  // file Google nativi (Docs, Fogli, …): si aprono online, non in anteprima
-  if (googleNativo(rec)) {
-    corpo.innerHTML = `<div class="nessuna-anteprima">
-      <span class="grande">📄</span>
-      <span>${rec.nome}</span>
-      <span style="font-size:12.5px">File Google: si visualizza e si modifica online.</span>
-      <a class="pulsante apri-google" href="${urlGoogleOnline(rec)}" target="_blank" rel="noopener">Apri su Google ↗</a>
-    </div>`;
-    return;
-  }
-
-  try {
-    urlCorrente = await Drive.url(rec);
-  } catch (e) {
-    corpo.innerHTML = `<div class="nessuna-anteprima">
-      <span class="grande">⚠️</span>
-      <span>Impossibile aprire il file</span>
-      <span style="font-size:12.5px">${e.message}</span></div>`;
-    return;
-  }
 
   if (testoAnteprima(rec.tipo, rec.nome)) {
     try {
@@ -1164,12 +1010,7 @@ async function caricaFiles(fileList) {
   }
   await renderFile();
   if (ok) {
-    let dove = "in locale";
-    if (ultimo && ultimo.origine === "google") {
-      dove = Drive.percorso.length
-        ? "in “" + Drive.percorso[Drive.percorso.length - 1].nome + "” su Google Drive"
-        : "in “Il mio Drive” su Google Drive";
-    }
+    const dove = ultimo && ultimo.origine === "google" ? "su Google Drive" : "in locale";
     toast("Drive",
       (ok === 1 ? "“" + file[0].name + "” salvato " + dove
                 : ok + " file salvati " + dove), "📁");
@@ -1254,7 +1095,6 @@ elemento("pulsante-cloud").addEventListener("click", async () => {
 elemento("stato-cloud").addEventListener("click", async () => {
   if (!confirm("Scollegare Google Drive? I file restano sul tuo Drive, quelli locali sul computer.")) return;
   GoogleDrive.disconnetti();
-  Drive.percorso = [];
   toast("Google Drive", "Scollegato. I file cloud torneranno visibili al prossimo accesso.", "💾");
   await renderFile();
 });
@@ -1265,40 +1105,6 @@ elemento("input-file").addEventListener("change", (e) => {
   e.target.value = "";
 });
 elemento("cerca-file").addEventListener("input", renderFile);
-
-// nuova cartella (visibile solo con Google Drive collegato)
-elemento("nuova-cartella").addEventListener("click", () => {
-  const riga = elemento("riga-percorso");
-  if (!riga || riga.querySelector(".input-cartella")) return;
-  const input = document.createElement("input");
-  input.type = "text";
-  input.className = "input-cartella";
-  input.placeholder = "Nome della cartella…";
-  riga.appendChild(input);
-  input.focus();
-  input.addEventListener("keydown", async (e) => {
-    if (e.key === "Escape") { input.remove(); return; }
-    if (e.key !== "Enter") return;
-    const nome = input.value.trim();
-    if (!nome) { input.remove(); return; }
-    input.disabled = true;
-    try {
-      await GoogleDrive.creaCartella(nome, Drive.cartellaAttuale());
-      const dove = Drive.percorso.length
-        ? " in “" + Drive.percorso[Drive.percorso.length - 1].nome + "”"
-        : " in “Il mio Drive”";
-      toast("Cartella", "“" + nome + "” creata" + dove + ".", "📂");
-      input.remove();
-      await renderFile();
-    } catch (err) {
-      input.disabled = false;
-      toast("Google Drive", err.message, "⚠️");
-    }
-  });
-  input.addEventListener("blur", () => {
-    if (!input.disabled) input.remove();
-  });
-});
 elemento("chiudi-modal").addEventListener("click", chiudiAnteprima);
 elemento("chiudi-modal-2").addEventListener("click", chiudiAnteprima);
 elemento("modal-file").addEventListener("click", (e) => {
@@ -1351,7 +1157,326 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+
+/* ============================================================
+   ACCESSO GOOGLE OBBLIGATORIO (nexiquar@gmail.com)
+   ============================================================ */
+async function avviaAccessoGoogleObbligatorio(account) {
+  mostraErrore("Collegamento a Google in corso…");
+  try {
+    if (typeof GoogleDrive === "undefined" || !GoogleDrive.configurato) {
+      mostraErrore("Google Drive non configurato. Contatta l'amministratore.");
+      return;
+    }
+    if (!GoogleDrive.online) {
+      mostraErrore("Apri il sito online (https://…) per accedere. Da file:// non è possibile.");
+      return;
+    }
+    await GoogleDrive.apri(false);
+    const email = (GoogleDrive.email || "").toLowerCase().trim();
+    if (email !== GOOGLE_OBBLIGATORIO) {
+      GoogleDrive.disconnetti();
+      mostraErrore(
+        "Serve l'account Google " + GOOGLE_OBBLIGATORIO +
+        ". Hai usato: " + (email || "sconosciuto") + ". Riprova."
+      );
+      return;
+    }
+    pulisciErrore();
+    entra(account);
+    aggiornaStatoCloud();
+  } catch (e) {
+    const msg = (e && e.message) ? e.message : "Accesso Google non riuscito";
+    mostraErrore(msg);
+  }
+}
+
+/* ============================================================
+   CAMBIA PASSWORD (Impostazioni → Account)
+   ============================================================ */
+elemento("form-cambia-password")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const msg = elemento("msg-pwd");
+  const mostra = (testo, ok) => {
+    msg.textContent = testo;
+    msg.classList.remove("nascosto", "ok");
+    if (ok) msg.classList.add("ok");
+  };
+  if (!utenteCorrente) {
+    mostra("Nessun utente connesso.", false);
+    return;
+  }
+  const attuale = elemento("pwd-attuale").value;
+  const nuova = elemento("pwd-nuova").value;
+  const conferma = elemento("pwd-conferma").value;
+
+  const lista = credenziali();
+  const acc = lista.find((a) => a.nome === utenteCorrente.nome);
+  if (!acc || acc.password !== attuale) {
+    mostra("Password attuale non corretta.", false);
+    return;
+  }
+  if (!nuova || nuova.length < 4) {
+    mostra("La nuova password deve avere almeno 4 caratteri.", false);
+    return;
+  }
+  if (nuova !== conferma) {
+    mostra("Le due nuove password non coincidono.", false);
+    return;
+  }
+  if (nuova === attuale) {
+    mostra("La nuova password è uguale a quella attuale.", false);
+    return;
+  }
+  salvaPasswordOverride(utenteCorrente.nome, nuova);
+  utenteCorrente.password = nuova;
+  elemento("pwd-attuale").value = "";
+  elemento("pwd-nuova").value = "";
+  elemento("pwd-conferma").value = "";
+  mostra("Password aggiornata correttamente.", true);
+  toast("Sicurezza", "Password cambiata con successo", "🔒");
+});
+
+/* ============================================================
+   CHAT · gruppo + privati (file .txt su Google Drive)
+   ============================================================ */
+function slugNome(nomeCompleto) {
+  return (nomeCompleto || "").trim().split(/\s+/)[0].toLowerCase()
+    .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
+
+function nomeFileChat(a, b) {
+  if (!b || b === "gruppo") return "gruppo.txt";
+  const x = slugNome(a);
+  const y = slugNome(b);
+  return [x, y].sort().join("_") + ".txt";
+}
+
+let chatAttiva = "gruppo";          // "gruppo" oppure nome completo del destinatario
+let chatCacheTesto = "";
+let chatPollTimer = null;
+let chatInCaricamento = false;
+
+function membriChat() {
+  const dati = credenziali() || [];
+  return dati.map((a) => a.nome);
+}
+
+function renderListaChatPrivate() {
+  const box = elemento("lista-chat-private");
+  if (!box || !utenteCorrente) return;
+  box.innerHTML = "";
+  membriChat()
+    .filter((n) => n !== utenteCorrente.nome)
+    .forEach((nome) => {
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.className = "chat-voce" + (chatAttiva === nome ? " attiva" : "");
+      btn.dataset.chat = nome;
+      const iniz = nome.trim().charAt(0).toUpperCase();
+      btn.innerHTML = `
+        <span class="chat-ico">${iniz}</span>
+        <span class="chat-voce-testo">
+          <strong>${nome}</strong>
+          <span>Messaggio diretto</span>
+        </span>`;
+      applicaColori($(".chat-ico", btn), nome);
+      btn.addEventListener("click", () => selezionaChat(nome));
+      box.appendChild(btn);
+    });
+}
+
+function selezionaChat(id) {
+  chatAttiva = id;
+  $$(".chat-voce").forEach((v) => {
+    v.classList.toggle("attiva", v.dataset.chat === id);
+  });
+  const isGruppo = id === "gruppo";
+  elemento("chat-header-ico").textContent = isGruppo ? "👥" : id.trim().charAt(0).toUpperCase();
+  elemento("chat-header-titolo").textContent = isGruppo ? "Chat di gruppo" : id;
+  elemento("chat-header-sotto").textContent = isGruppo
+    ? "Tutti i membri · sincronizzata su Google Drive"
+    : "Privata · file " + nomeFileChat(utenteCorrente.nome, id);
+  if (!isGruppo) applicaColori(elemento("chat-header-ico"), id);
+  caricaMessaggiChat(true);
+}
+
+function parseMessaggi(testo) {
+  // Formato riga: [YYYY-MM-DD HH:MM] Nome: testo
+  const righe = (testo || "").split(/\r?\n/);
+  const out = [];
+  const re = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s+(.+?):\s*(.*)$/;
+  for (const r of righe) {
+    const m = r.match(re);
+    if (m) out.push({ ora: m[1], nome: m[2], testo: m[3] });
+  }
+  return out;
+}
+
+function formattaRiga(nome, testo) {
+  const d = new Date();
+  const pad = (n) => String(n).padStart(2, "0");
+  const stamp =
+    d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
+    " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
+  return "[" + stamp + "] " + nome + ": " + testo.replace(/\r?\n/g, " ");
+}
+
+function renderMessaggiChat(lista) {
+  const box = elemento("chat-messaggi");
+  const vuoto = elemento("chat-vuoto");
+  if (!box) return;
+  // rimuovi messaggi precedenti ma tieni il vuoto
+  $$(".msg-chat", box).forEach((el) => el.remove());
+  if (!lista.length) {
+    if (vuoto) vuoto.classList.remove("nascosto");
+    return;
+  }
+  if (vuoto) vuoto.classList.add("nascosto");
+  const me = utenteCorrente ? utenteCorrente.nome : "";
+  lista.forEach((m) => {
+    const div = document.createElement("div");
+    div.className = "msg-chat" + (m.nome === me ? " mio" : "");
+    div.innerHTML =
+      '<span class="msg-nome"></span>' +
+      '<span class="msg-testo"></span>' +
+      '<span class="msg-ora"></span>';
+    $(".msg-nome", div).textContent = m.nome;
+    $(".msg-testo", div).textContent = m.testo;
+    $(".msg-ora", div).textContent = m.ora;
+    box.appendChild(div);
+  });
+  box.scrollTop = box.scrollHeight;
+}
+
+async function caricaMessaggiChat(forza) {
+  if (chatInCaricamento && !forza) return;
+  if (!utenteCorrente) return;
+  if (typeof GoogleDrive === "undefined" || !GoogleDrive.connesso) {
+    renderMessaggiChat([]);
+    const vuoto = elemento("chat-vuoto");
+    if (vuoto) {
+      vuoto.classList.remove("nascosto");
+      vuoto.querySelector("p").textContent = "Google Drive non collegato";
+      vuoto.querySelector("span:last-child").textContent =
+        "Le chat richiedono l'account " + GOOGLE_OBBLIGATORIO + ".";
+    }
+    return;
+  }
+  chatInCaricamento = true;
+  try {
+    const file = nomeFileChat(
+      utenteCorrente.nome,
+      chatAttiva === "gruppo" ? "gruppo" : chatAttiva
+    );
+    const testo = await GoogleDrive.leggiTesto(file);
+    if (testo !== chatCacheTesto || forza) {
+      chatCacheTesto = testo;
+      renderMessaggiChat(parseMessaggi(testo));
+    }
+  } catch (e) {
+    if (window.console) console.warn("Chat:", e.message);
+  } finally {
+    chatInCaricamento = false;
+  }
+}
+
+async function inviaMessaggioChat(testo) {
+  if (!utenteCorrente || !testo.trim()) return;
+  if (typeof GoogleDrive === "undefined" || !GoogleDrive.connesso) {
+    toast("Chat", "Collega Google Drive (" + GOOGLE_OBBLIGATORIO + ") per inviare.", "⚠️");
+    return;
+  }
+  const file = nomeFileChat(
+    utenteCorrente.nome,
+    chatAttiva === "gruppo" ? "gruppo" : chatAttiva
+  );
+  try {
+    let attuale = "";
+    try { attuale = await GoogleDrive.leggiTesto(file); } catch (e) {}
+    const riga = formattaRiga(utenteCorrente.nome, testo.trim());
+    const nuovo = (attuale ? attuale.replace(/\s+$/, "") + "\n" : "") + riga + "\n";
+    await GoogleDrive.scriviTesto(file, nuovo);
+    chatCacheTesto = nuovo;
+    renderMessaggiChat(parseMessaggi(nuovo));
+  } catch (e) {
+    toast("Chat", e.message || "Invio non riuscito", "⚠️");
+  }
+}
+
+function avviaPollChat() {
+  fermaPollChat();
+  chatPollTimer = setInterval(() => {
+    if (APP.chat && !APP.chat.classList.contains("nascosto")) {
+      caricaMessaggiChat(false);
+    }
+  }, 8000);
+}
+
+function fermaPollChat() {
+  if (chatPollTimer) {
+    clearInterval(chatPollTimer);
+    chatPollTimer = null;
+  }
+}
+
+function apriChat() {
+  renderListaChatPrivate();
+  // evidenzia gruppo
+  $$(".chat-voce").forEach((v) =>
+    v.classList.toggle("attiva", v.dataset.chat === chatAttiva)
+  );
+  selezionaChat(chatAttiva || "gruppo");
+  avviaPollChat();
+  setTimeout(() => elemento("input-chat")?.focus(), 150);
+}
+
+elemento("btn-chat-gruppo")?.addEventListener("click", () => selezionaChat("gruppo"));
+
+elemento("form-chat")?.addEventListener("submit", (e) => {
+  e.preventDefault();
+  const input = elemento("input-chat");
+  const t = (input.value || "").trim();
+  if (!t) return;
+  input.value = "";
+  inviaMessaggioChat(t);
+});
+
+/* ============================================================
+   PERFORMANCE · riduci carico GPU/CPU all'avvio (MacBook 2015)
+   ============================================================ */
+(function ottimizzaAvvio() {
+  let attiva = false;
+  try {
+    if (localStorage.getItem("nexiquar_riduci_mov") === "1") attiva = true;
+  } catch (e) {}
+  try {
+    const cores = navigator.hardwareConcurrency || 4;
+    const mem = navigator.deviceMemory || 4;
+    if (cores <= 4 || mem <= 4) attiva = true;
+  } catch (e) {}
+  if (attiva) {
+    document.body.classList.add("riduci-movimento");
+    $$(".interruttore[data-effetto=\"movimento\"]").forEach((el) => {
+      el.classList.add("attivo");
+      el.setAttribute("aria-checked", "true");
+    });
+  }
+})();
+
+// collega interruttore movimento a localStorage
+$$(".interruttore").forEach((interruttore) => {
+  if (interruttore.dataset.effetto === "movimento") {
+    interruttore.addEventListener("click", () => {
+      const attivo = interruttore.classList.contains("attivo");
+      try { localStorage.setItem("nexiquar_riduci_mov", attivo ? "1" : "0"); } catch (e) {}
+    });
+  }
+});
+
+
 /* ---------------- avvio ---------------- */
 initCalendario();
 renderCalendario();
 mostraAccount();
+aggiornaStatoCloud();
