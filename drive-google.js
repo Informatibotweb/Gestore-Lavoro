@@ -4,8 +4,9 @@
 
    Come funziona:
    - OAuth 2.0 con Google Identity Services (login "Accedi con Google")
-   - Scope drive.file: l'accesso riguarda SOLO i file creati da questa app
-   - I file finiscono nella cartella "Nexiquar" del Drive dell'utente
+   - Scope drive: accesso COMPLETO al Google Drive dell'account collegato
+   - Elenco e gestione di tutti i file del Drive (non solo una cartella)
+   - I file di chat restano organizzati nella cartella "Nexiquar"
 
    ATTENZIONE: richiede un sito online (https) e un OAuth Client ID.
    Da file:// Google rifiuta il login (origine non autorizzata).
@@ -16,7 +17,7 @@ const GOOGLE_CLIENT_ID =
   "1067372020805-i47ki5du62c4eotbee6b00q493lnipjm.apps.googleusercontent.com";
 
 const GOOGLE_SCOPE =
-  "https://www.googleapis.com/auth/drive.file openid email";
+  "https://www.googleapis.com/auth/drive openid email";
 
 const GoogleDrive = {
   token: null,
@@ -219,11 +220,14 @@ const GoogleDrive = {
 
   /* ---------- operazioni ---------- */
   async elenco() {
-    const cartella = await this.cartellaNexiquar();
-    const q = encodeURIComponent("'" + cartella + "' in parents and trashed=false");
+    // Drive completo: tutti i file non nel cestino (escluse le sole cartelle vuote di sistema)
+    const q = encodeURIComponent(
+      "trashed=false and mimeType!='application/vnd.google-apps.folder'"
+    );
     const ris = await this.chiedi(
       "https://www.googleapis.com/drive/v3/files?q=" + q +
-        "&pageSize=300&fields=files(id,name,mimeType,size,createdTime,modifiedTime)"
+        "&pageSize=500&orderBy=modifiedTime desc" +
+        "&fields=files(id,name,mimeType,size,createdTime,modifiedTime,parents)"
     );
     const j = await ris.json();
     return (j.files || []).map((f) => ({
@@ -232,17 +236,17 @@ const GoogleDrive = {
       nome: f.name,
       tipo: f.mimeType || "application/octet-stream",
       size: Number(f.size || 0),
-      data: f.createdTime || f.modifiedTime || new Date().toISOString(),
+      data: f.modifiedTime || f.createdTime || new Date().toISOString(),
     }));
   },
 
   async salva(file) {
-    const cartella = await this.cartellaNexiquar();
+    // Caricamento sul Drive completo (radice "Il mio Drive")
     const fd = new FormData();
     fd.append(
       "metadata",
       new Blob(
-        [JSON.stringify({ name: file.name, parents: [cartella] })],
+        [JSON.stringify({ name: file.name })],
         { type: "application/json" }
       )
     );
