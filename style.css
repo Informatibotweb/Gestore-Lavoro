@@ -1842,3 +1842,44 @@ body.riduci-movimento .striscia {
   .chat-laterale { width: 180px; flex-basis: 180px; }
   .msg-chat { max-width: 88%; }
 }
+
+
+/* ricevute di lettura (loghi di chi ha visto) */
+.msg-meta {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 6px;
+  flex-wrap: wrap;
+}
+.msg-ora {
+  margin-top: 0;
+  font-size: 11px;
+  color: var(--testo-soft);
+}
+.msg-visti {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex-direction: row-reverse;
+}
+.visto-avatar {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-size: 9px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(140deg, var(--hue-a, #0a84ff), var(--hue-b, #5e5ce6));
+  border: 1.5px solid rgba(255, 255, 255, 0.75);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.35);
+  cursor: default;
+  margin-left: -4px;
+}
+.visto-avatar:last-child { margin-left: 0; }
+.msg-chat.mio .msg-visti {
+  /* i miei messaggi: loghi a sinistra dell'ora, sempre a destra del bubble */
+}
