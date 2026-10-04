@@ -1541,14 +1541,30 @@ elemento("form-cambia-password")?.addEventListener("submit", async (e) => {
 });
 
 /* ============================================================
-   CHAT · gruppo + privati (file .txt su Google Drive)
+   CHAT · gruppo + privati (file JSON sul TUO Google Drive,
+   nella cartella "Nexiquar" – nessun servizio esterno)
    ============================================================ */
 function slugNome(nomeCompleto) {
   return (nomeCompleto || "").trim().split(/\s+/)[0].toLowerCase()
     .normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 }
 
+function primoNome(nomeCompleto) {
+  return (nomeCompleto || "").trim().split(/\s+/)[0] || "";
+}
+
+/* file della conversazione: group.json · Ahmed-mattia.json ·
+   Ahmed-silvio.json · Mattia-silvio.json */
 function nomeFileChat(a, b) {
+  if (!b || b === "gruppo") return "group.json";
+  const coppia = [primoNome(a), primoNome(b)]
+    .sort((x, y) => x.toLowerCase().localeCompare(y.toLowerCase()));
+  const base = coppia.join("-").toLowerCase();
+  return base.charAt(0).toUpperCase() + base.slice(1) + ".json";
+}
+
+/* nome del vecchio file .txt: serve solo a migrare lo storico */
+function vecchioNomeFileChat(a, b) {
   if (!b || b === "gruppo") return "gruppo.txt";
   const x = slugNome(a);
   const y = slugNome(b);
@@ -1624,8 +1640,33 @@ async function verificaFirma(msg) {
   return diff === 0;
 }
 
+/* legge la conversazione in formato JSON:
+   [{ "ora": ..., "nome": ..., "testo": ..., "visti": [...], "sig": ... }, …] */
 async function parseMessaggi(testo) {
-  // Formato: [YYYY-MM-DD HH:MM] Nome: testo |§|seen:... |§|sig:hex
+  if (!testo || !testo.trim()) return [];
+  let dati;
+  try { dati = JSON.parse(testo); } catch (e) { return []; }
+  if (!Array.isArray(dati)) return [];
+  const out = [];
+  for (const m of dati) {
+    if (!m || typeof m !== "object") continue;
+    const msg = {
+      ora: String(m.ora || ""),
+      nome: String(m.nome || ""),
+      testo: String(m.testo || ""),
+      visti: Array.isArray(m.visti) ? m.visti.map(String) : [],
+      sig: String(m.sig || ""),
+    };
+    if (!msg.ora || !msg.nome) continue;
+    // rifiuta messaggi senza firma valida (file modificati a mano)
+    if (!(await verificaFirma(msg))) continue;
+    out.push(msg);
+  }
+  return out;
+}
+
+/* vecchio formato .txt (solo per migrare lo storico nel nuovo .json) */
+async function parseMessaggiLegacy(testo) {
   const righe = (testo || "").split(/\r?\n/);
   const out = [];
   const re = /^\[(\d{4}-\d{2}-\d{2} \d{2}:\d{2})\]\s+(.+?):\s*(.*)$/;
@@ -1636,7 +1677,6 @@ async function parseMessaggi(testo) {
     let corpo = m[3];
     let visti = [];
     let sig = "";
-    // estrai sig e seen (ordine indipendente)
     const parti = corpo.split(" |§|");
     corpo = parti[0];
     for (let i = 1; i < parti.length; i++) {
@@ -1648,40 +1688,46 @@ async function parseMessaggi(testo) {
       }
     }
     const msg = { ora: m[1], nome: m[2], testo: corpo, visti, sig };
-    // rifiuta messaggi senza firma valida (modifiche manuali al .txt)
     if (!(await verificaFirma(msg))) continue;
     out.push(msg);
   }
   return out;
 }
 
-async function formattaRiga(nome, testo, visti) {
+/* crea un messaggio firmato {ora, nome, testo, visti, sig} */
+async function oggettoMessaggio(nome, testo, visti) {
   const d = new Date();
   const pad = (n) => String(n).padStart(2, "0");
   const stamp =
     d.getFullYear() + "-" + pad(d.getMonth() + 1) + "-" + pad(d.getDate()) +
     " " + pad(d.getHours()) + ":" + pad(d.getMinutes());
-  const corpo = testo.replace(/\r?\n/g, " ");
-  let riga = "[" + stamp + "] " + nome + ": " + corpo;
-  const lista = (visti || []).filter(Boolean);
-  if (lista.length) riga += " |§|seen:" + lista.join(";");
-  const sig = await firmaMessaggio(stamp, nome, corpo);
-  if (sig) riga += " |§|sig:" + sig;
-  return riga;
+  const msg = {
+    ora: stamp,
+    nome: nome,
+    testo: testo.replace(/\r?\n/g, " "),
+    visti: (visti || []).filter(Boolean),
+  };
+  const sig = await firmaMessaggio(stamp, nome, msg.testo);
+  if (sig) msg.sig = sig;
+  return msg;
 }
 
+/* serializza in JSON leggibile (2 spazi), firma inclusa */
 async function serializzaMessaggi(lista) {
-  const righe = [];
+  const out = [];
   for (const m of lista) {
-    // ricalcola sempre la firma sul contenuto attuale (dopo update seen)
-    let riga = "[" + m.ora + "] " + m.nome + ": " + m.testo;
-    const listaV = (m.visti || []).filter(Boolean);
-    if (listaV.length) riga += " |§|seen:" + listaV.join(";");
+    const msg = {
+      ora: m.ora,
+      nome: m.nome,
+      testo: m.testo,
+      visti: (m.visti || []).filter(Boolean),
+    };
+    // ricalcola sempre la firma sul contenuto attuale (dopo update "visti")
     const sig = await firmaMessaggio(m.ora, m.nome, m.testo);
-    if (sig) riga += " |§|sig:" + sig;
-    righe.push(riga);
+    if (sig) msg.sig = sig;
+    out.push(msg);
   }
-  return righe.join("\n") + (righe.length ? "\n" : "");
+  return JSON.stringify(out, null, 2);
 }
 
 function avatarVisto(nome) {
@@ -1754,6 +1800,25 @@ async function marcaMessaggiComeVisti(file, testo) {
   return nuovo;
 }
 
+/* legge la chat .json; se non esiste ancora prova a migrare lo storico
+   del vecchio formato .txt (il vecchio file resta lì, si può cancellare) */
+async function leggiChatCorrente(file, vecchioFile) {
+  const testo = await GoogleDrive.leggiTesto(file);
+  if (testo) return testo;
+  try {
+    const t = await GoogleDrive.leggiTesto(vecchioFile);
+    if (!t) return "";
+    const lista = await parseMessaggiLegacy(t);
+    if (!lista.length) return "";
+    const j = await serializzaMessaggi(lista);
+    await GoogleDrive.scriviTesto(file, j);
+    toast("Chat", "Storico spostato nel nuovo file " + file, "📦");
+    return j;
+  } catch (e) {
+    return "";
+  }
+}
+
 async function caricaMessaggiChat(forza) {
   if (chatInCaricamento && !forza) return;
   if (!utenteCorrente) return;
@@ -1774,7 +1839,11 @@ async function caricaMessaggiChat(forza) {
       utenteCorrente.nome,
       chatAttiva === "gruppo" ? "gruppo" : chatAttiva
     );
-    let testo = await GoogleDrive.leggiTesto(file);
+    const vecchio = vecchioNomeFileChat(
+      utenteCorrente.nome,
+      chatAttiva === "gruppo" ? "gruppo" : chatAttiva
+    );
+    let testo = await leggiChatCorrente(file, vecchio);
     testo = await marcaMessaggiComeVisti(file, testo);
     if (testo !== chatCacheTesto || forza) {
       chatCacheTesto = testo;
@@ -1797,18 +1866,23 @@ async function inviaMessaggioChat(testo) {
     utenteCorrente.nome,
     chatAttiva === "gruppo" ? "gruppo" : chatAttiva
   );
+  const vecchio = vecchioNomeFileChat(
+    utenteCorrente.nome,
+    chatAttiva === "gruppo" ? "gruppo" : chatAttiva
+  );
   try {
-    let attuale = "";
-    try { attuale = await GoogleDrive.leggiTesto(file); } catch (e) {}
-    const riga = await formattaRiga(
+    let lista = [];
+    try { lista = await parseMessaggi(await leggiChatCorrente(file, vecchio)); }
+    catch (e) {}
+    lista.push(await oggettoMessaggio(
       utenteCorrente.nome,
       testo.trim(),
       [utenteCorrente.nome]
-    );
-    const nuovo = (attuale ? attuale.replace(/\s+$/, "") + "\n" : "") + riga + "\n";
+    ));
+    const nuovo = await serializzaMessaggi(lista);
     await GoogleDrive.scriviTesto(file, nuovo);
     chatCacheTesto = nuovo;
-    renderMessaggiChat(await parseMessaggi(nuovo));
+    renderMessaggiChat(lista);
   } catch (e) {
     toast("Chat", e.message || "Invio non riuscito", "⚠️");
   }

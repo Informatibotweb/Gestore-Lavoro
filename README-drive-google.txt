@@ -35,15 +35,30 @@ finestra di Google (se compare "app non verificata": Avanzato →
 
 CHAT
 ----
-I file di testo nella cartella Nexiquar:
-  gruppo.txt
-  ahmed_mattia.txt
-  ahmed_silvio.txt
-  mattia_silvio.txt
+I messaggi sono file JSON di TUA proprietà, sul TUO Google Drive,
+nella cartella "Nexiquar" (nessun servizio esterno tipo jsonbin.io):
+  group.json                 chat di gruppo
+  Ahmed-mattia.json          privata Mattia <-> Ahmed
+  Ahmed-silvio.json          privata Ahmed <-> Silvio
+  Mattia-silvio.json         privata Mattia <-> Silvio
 
-Formato riga messaggio:
-  [YYYY-MM-DD HH:MM] Nome Cognome: testo |§|seen:Nome1;Nome2
-  (i nomi dopo seen: sono chi ha aperto e visualizzato il messaggio)
+Formato (array JSON):
+  [
+    {
+      "ora": "2026-10-04 10:32",
+      "nome": "Mattia Berce",
+      "testo": "ciao a tutti",
+      "visti": ["Mattia Berce", "Ahmed Osmanovic"],
+      "sig": "..."
+    }
+  ]
+
+- "visti" = chi ha letto il messaggio (gli avatar sotto il messaggio)
+- "sig"   = firma di sicurezza: se qualcuno modifica il file a mano,
+            quel messaggio viene ignorato
+- i vecchi .txt (gruppo.txt, ahmed_mattia.txt, ...) vengono migrati
+  automaticamente nel nuovo .json alla prima apertura della chat;
+  i vecchi file restano nella cartella e si possono cancellare da File.
 
 Si aggiornano a ogni invio e ogni ~4 secondi se la finestra Chat è aperta.
 
