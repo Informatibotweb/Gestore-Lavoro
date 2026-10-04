@@ -62,6 +62,31 @@ Formato (array JSON):
 
 Si aggiornano a ogni invio e ogni ~4 secondi se la finestra Chat è aperta.
 
+CALENDARIO CONDIVISO
+--------------------
+Anche gli impegni sono un file JSON di tua proprietà sul Drive, sempre
+nella cartella "Nexiquar":
+
+  calendario.json
+
+Formato (array JSON):
+  [
+    {
+      "data": "2026-10-07",
+      "ora": "09:00",
+      "testo": "uscita nuovo video su youtube",
+      "nome": "Silvio Chen",
+      "sig": "..."
+    }
+  ]
+
+- "nome" = chi ha aggiunto l'impegno (compare nella griglia come
+  "Silvio: testo" e come badge nel pannello del giorno)
+- "sig"  = firma di sicurezza: le modifiche fatte a mano vengono ignorate
+- tutti vedono gli stessi impegni: si aggiornano aprendo il Calendario e
+  ogni ~5 secondi se la finestra è aperta
+- la prima apertura sposta su Drive gli impegni salvati solo sul computer
+
 PUBBLICAZIONE
 -------------
 Serve HTTPS (es. Netlify). Aggiungi l'URL tra gli Authorized JavaScript origins

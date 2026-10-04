@@ -277,6 +277,7 @@ function entra(utente) {
 
 function esci() {
   fermaPollChat();
+  fermaPollCalendario();
   chiudiTutteLeFinestre();
   utenteCorrente = null;
   try { sessionStorage.removeItem("utenteLoggato"); } catch (e) {}
@@ -327,7 +328,11 @@ function apriApp(nome) {
     b.classList.toggle("aperta", b.dataset.app === nome)
   );
 
-  if (nome === "calendario") renderCalendario();
+  if (nome === "calendario") {
+    renderCalendario();
+    avviaPollCalendario();
+    sincronizzaCalendario();
+  }
   if (nome === "file") renderFile();
   if (nome === "chat") apriChat();
 }
@@ -531,8 +536,150 @@ function caricaEventi() {
   return [];
 }
 
-function salvaEventi() {
+function salvaEventiLocali() {
   try { localStorage.setItem("nexiquar_eventi_v2", JSON.stringify(eventi)); } catch (e) {}
+}
+
+function salvaEventi() {
+  // salvataggio locale + spinta su Google Drive (condiviso con tutti)
+  salvaEventiLocali();
+  spingiCalendario();
+}
+
+/* ---------- eventi condivisi: calendario.json sul Drive ---------- */
+const FILE_CALENDARIO = "calendario.json";
+const CHIAVE_MIGRA_CAL = "nexiquar_cal_migrato";
+let calendarioCacheTesto = "";
+let calendarioInCaricamento = false;
+let calendarioGen = 0;            // protezione dagli incroci letto/scritto
+let calendarioPollTimer = null;
+
+/* legge calendario.json: [{data, ora, testo, nome, sig}, …] firmato */
+async function parseEventi(testo) {
+  if (!testo || !testo.trim()) return [];
+  let dati;
+  try { dati = JSON.parse(testo); } catch (e) { return []; }
+  if (!Array.isArray(dati)) return [];
+  const out = [];
+  for (const e of dati) {
+    if (!e || typeof e !== "object") continue;
+    const ev = {
+      data: String(e.data || ""),
+      ora: String(e.ora || "09:00"),
+      testo: String(e.testo || ""),
+      nome: String(e.nome || ""),
+      sig: String(e.sig || ""),
+    };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(ev.data) || !ev.testo) continue;
+    const valida = await verificaFirma({
+      ora: ev.data + " " + ev.ora, nome: ev.nome, testo: ev.testo, sig: ev.sig,
+    });
+    if (!valida) continue;        // file modificato a mano → scartato
+    out.push(ev);
+  }
+  return out;
+}
+
+async function serializzaEventi(lista) {
+  const out = [];
+  for (const e of lista) {
+    const ev = {
+      data: e.data,
+      ora: e.ora || "09:00",
+      testo: e.testo,
+      nome: e.nome || "",
+    };
+    // firma su data+ora+nome+testo (come la chat: mano sulla file e scartato)
+    const sig = await firmaMessaggio(ev.data + " " + ev.ora, ev.nome, ev.testo);
+    if (sig) ev.sig = sig;
+    out.push(ev);
+  }
+  return JSON.stringify(out, null, 2);
+}
+
+function eventoChiave(e) {
+  return e.data + "|" + (e.ora || "09:00") + "|" + e.testo;
+}
+
+/* scrive gli eventi su Drive; il contatore gen evita che una
+   scrittura vecchia sovrascriva quella appena fatta */
+async function spingiCalendario() {
+  if (typeof GoogleDrive === "undefined" || !GoogleDrive.connesso) return;
+  const gen = ++calendarioGen;
+  try {
+    const testo = await serializzaEventi(eventi);
+    if (gen !== calendarioGen) return;
+    await GoogleDrive.scriviTesto(FILE_CALENDARIO, testo);
+    calendarioCacheTesto = testo;
+  } catch (e) {
+    toast("Calendario", "Salvataggio su Drive non riuscito", "⚠️");
+  }
+}
+
+/* scarica calendario.json dalla cartella Nexiquar; la PRIMA volta unisce
+   (e pubblica) gli eventi salvati solo su questo computer, poi il Drive
+   fa fede: quello che un altro utente cancella resta cancellato */
+async function sincronizzaCalendario() {
+  if (calendarioInCaricamento) return;
+  if (typeof GoogleDrive === "undefined" || !GoogleDrive.connesso) return;
+  calendarioInCaricamento = true;
+  const gen = calendarioGen;
+  try {
+    let migrato = false;
+    try { migrato = localStorage.getItem(CHIAVE_MIGRA_CAL) === "1"; } catch (e) {}
+    const testo = await GoogleDrive.leggiTesto(FILE_CALENDARIO);
+    const cloud = await parseEventi(testo);
+    let lista = cloud;
+    let pubblica = false;
+    if (!migrato) {
+      const chiavi = new Set(cloud.map(eventoChiave));
+      lista = cloud.slice();
+      let locali = [];
+      try { locali = JSON.parse(localStorage.getItem("nexiquar_eventi_v2") || "[]"); } catch (e) {}
+      for (const e of locali) {
+        if (!e || !e.data || !e.testo) continue;
+        if (chiavi.has(eventoChiave(e))) continue;
+        // gli eventi locali senza autore prendono chi li sincronizza
+        lista.push({
+          data: e.data,
+          ora: e.ora || "09:00",
+          testo: e.testo,
+          nome: e.nome || (utenteCorrente ? utenteCorrente.nome : ""),
+        });
+        pubblica = true;
+      }
+    }
+    const nuovo = await serializzaEventi(lista);
+    if (gen !== calendarioGen) return;      // nel frattempo ho salvato: al prossimo giro
+    if (pubblica) await GoogleDrive.scriviTesto(FILE_CALENDARIO, nuovo);
+    try { localStorage.setItem(CHIAVE_MIGRA_CAL, "1"); } catch (e) {}
+    if (nuovo === calendarioCacheTesto) return;   // nessun cambiamento
+    calendarioCacheTesto = nuovo;
+    eventi = lista;
+    salvaEventiLocali();
+    renderCalendario();
+  } catch (e) {
+    if (window.console) console.warn("Calendario:", e.message);
+  } finally {
+    calendarioInCaricamento = false;
+  }
+}
+
+/* aggiornamenti dagli altri: controlla ogni5 secondi se la finestra
+   Calendario è aperta (stesso principio della chat) */
+function avviaPollCalendario() {
+  if (calendarioPollTimer) return;
+  calendarioPollTimer = setInterval(() => {
+    if (APP.calendario && !APP.calendario.classList.contains("nascosto"))
+      sincronizzaCalendario();
+  }, 5000);
+}
+
+function fermaPollCalendario() {
+  if (calendarioPollTimer) {
+    clearInterval(calendarioPollTimer);
+    calendarioPollTimer = null;
+  }
 }
 
 function initCalendario() {
@@ -573,7 +720,13 @@ function renderCalendario() {
     delGiorno.slice(0, 2).forEach((ev) => {
       const e = document.createElement("div");
       e.className = "evento";
-      e.innerHTML = `<span class="ora">${ev.ora}</span> ${ev.testo}`;
+      const oraEl = document.createElement("span");
+      oraEl.className = "ora";
+      oraEl.textContent = ev.ora;
+      e.appendChild(oraEl);
+      const autore = ev.nome ? primoNome(ev.nome) + ": " : "";
+      e.appendChild(document.createTextNode(" " + autore + ev.testo));
+      e.title = (ev.nome ? ev.nome + " · " : "") + ev.testo;
       cella.appendChild(e);
     });
     if (delGiorno.length > 2) {
@@ -615,11 +768,20 @@ function renderGiornoSelezionato() {
   lista.innerHTML = "";
   delGiorno.forEach((ev) => {
     const li = document.createElement("li");
-    li.innerHTML = `
-      <span class="pallino"></span>
-      <span class="testo-ev">${ev.testo}</span>
-      <span class="ora-ev">${ev.ora}</span>
-      <button class="cancella" title="Elimina">×</button>`;
+    li.innerHTML =
+      '<span class="pallino"></span>' +
+      '<span class="testo-ev"></span>' +
+      '<span class="ora-ev"></span>' +
+      '<button class="cancella" title="Elimina">×</button>';
+    $(".testo-ev", li).textContent = ev.testo;
+    $(".ora-ev", li).textContent = ev.ora;
+    if (ev.nome) {
+      const a = document.createElement("span");
+      a.className = "autore-ev";
+      a.textContent = primoNome(ev.nome);
+      a.title = ev.nome;
+      li.insertBefore(a, $(".testo-ev", li));
+    }
     $(".cancella", li).addEventListener("click", () => {
       eventi = eventi.filter((x) => x !== ev);
       salvaEventi();
@@ -634,7 +796,12 @@ elemento("form-evento").addEventListener("submit", (e) => {
   e.preventDefault();
   const testo = elemento("testo-evento").value.trim();
   if (!testo) return;
-  eventi.push({ data: giornoSel, ora: elemento("ora-evento").value || "09:00", testo });
+  eventi.push({
+    data: giornoSel,
+    ora: elemento("ora-evento").value || "09:00",
+    testo,
+    nome: utenteCorrente ? utenteCorrente.nome : "",
+  });
   salvaEventi();
   elemento("testo-evento").value = "";
   renderCalendario();
